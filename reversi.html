@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>リバーシ</title>
+<style>
+  :root {
+    --bg: #1a1f2b;
+    --panel: #232a3a;
+    --text: #e8ecf4;
+    --dim: #93a0b8;
+    --accent: #ffd54a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 24px 12px;
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  }
+  h1 { margin: 0; font-size: 26px; letter-spacing: 4px; }
+  #hud {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--panel);
+    padding: 10px 22px;
+    border-radius: 12px;
+    font-size: 18px;
+    width: min(560px, 94vw);
+    justify-content: space-between;
+  }
+  .score { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+  .discIcon {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-block; border: 1px solid #000;
+  }
+  .discIcon.black { background: #111; }
+  .discIcon.white { background: #f5f5f5; }
+  #status { font-size: 15px; color: var(--dim); flex: 1; text-align: center; }
+  #status.active { color: var(--accent); }
+  canvas { width: min(560px, 94vw); height: auto; aspect-ratio: 1 / 1; border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45); touch-action: none; user-select: none; -webkit-user-select: none; }
+  #controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; align-items: center; }
+  button {
+    background: var(--panel); color: var(--text);
+    border: 1px solid #3a4661; border-radius: 8px;
+    padding: 10px 16px; font-size: 14px; cursor: pointer; touch-action: manipulation;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button.selected { background: var(--accent); color: #1a1f2b; border-color: var(--accent); font-weight: 600; }
+  #levelControls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
+  .levelLabel { font-size: 13px; color: var(--dim); }
+  #padIndicator { font-size: 13px; color: var(--dim); }
+  #help { font-size: 13px; color: var(--dim); text-align: center; line-height: 1.8; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(10,13,20,.78);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; font-size: 30px; backdrop-filter: blur(3px);
+  }
+  #overlay .sub { font-size: 15px; color: var(--dim); }
+  #overlay button { font-size: 16px; padding: 10px 26px; }
+  #overlay button:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>リバーシ</h1>
+<div id="hud">
+  <div class="score"><span class="discIcon black"></span>黒 <span id="scoreBlack">2</span></div>
+  <div id="status">黒の手番</div>
+  <div class="score"><span class="discIcon white"></span>白 <span id="scoreWhite">2</span></div>
+</div>
+<canvas id="board" width="560" height="560"></canvas>
+<div id="controls">
+  <button id="btnCpu" class="selected">CPU対戦</button>
+  <button id="btn2p">2人プレイ</button>
+  <button id="btnReset">リセット</button>
+  <span id="padIndicator">🎮 パッド未接続</span>
+</div>
+<div id="levelControls">
+  <span class="levelLabel">CPUの強さ</span>
+  <button class="levelBtn selected" data-level="normal">ノーマル</button>
+  <button class="levelBtn" data-level="high">ハイレベル</button>
+  <button class="levelBtn" data-level="hell">ヘルモード</button>
+  <button class="levelBtn" data-level="nightmare">ナイトメア</button>
+</div>
+<div id="help">
+  スマホ・タブレット: 打ちたいマスをタップ（置ける場所に薄い点が表示されます）<br>
+  キーボード: ←↑→↓ / WASD でカーソル・Enter / スペース で確定・R でリセット<br>
+  ゲームパッド: 十字キー / 左スティックでカーソル・Aボタンで確定・Startでリセット（接続後いずれかのボタンを押すと認識されます）
+</div>
+<div id="overlay" hidden>
+  <div id="overlayText"></div>
+  <div class="sub" id="overlaySub"></div>
+  <button id="btnOverlayReset">もう一度あそぶ</button>
+</div>
+
+<script>
+(() => {
+  const N = 8, CELL = 64, PAD = 24;
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status');
+  const scoreBlackEl = document.getElementById('scoreBlack');
+  const scoreWhiteEl = document.getElementById('scoreWhite');
+  const overlay = document.getElementById('overlay');
+  const overlayText = document.getElementById('overlayText');
+  const overlaySub = document.getElementById('overlaySub');
+  const padIndicator = document.getElementById('padIndicator');
+  const btnCpu = document.getElementById('btnCpu');
+  const btn2p = document.getElementById('btn2p');
+
+  const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  // CPUの指し手評価用（角を重視し、角の隣を避ける定番の重み表）
+  const WEIGHT = [
+    [120,-20, 20,  5,  5, 20,-20,120],
+    [-20,-40, -5, -5, -5, -5,-40,-20],
+    [ 20, -5, 15,  3,  3, 15, -5, 20],
+    [  5, -5,  3,  3,  3,  3, -5,  5],
+    [  5, -5,  3,  3,  3,  3, -5,  5],
+    [ 20, -5, 15,  3,  3, 15, -5, 20],
+    [-20,-40, -5, -5, -5, -5,-40,-20],
+    [120,-20, 20,  5,  5, 20,-20,120],
+  ];
+
+  let board, turn, cursor, mode = 'cpu', level = 'normal', gameOver, notice, cpuTimer;
+  const prevPad = {}; // パッド番号 -> 前フレームの押下状態
+
+  function newGame() {
+    clearTimeout(cpuTimer);
+    thinkId++;
+    if (worker) { worker.terminate(); worker = null; }
+    board = new Array(64).fill(0);
+    board[3*8+3] = board[4*8+4] = 2; // 白: d4, e5
+    board[3*8+4] = board[4*8+3] = 1; // 黒: d5, e4
+    turn = 1; // 黒先手
+    cursor = { x: 3, y: 2 };
+    gameOver = false;
+    notice = '';
+    overlay.hidden = true;
+    draw();
+  }
+
+  const inb = (x, y) => x >= 0 && x < N && y >= 0 && y < N;
+
+  // (x,y) に player が打ったひっくり返される石のリスト
+  function flipsFor(bd, x, y, player) {
+    if (bd[y*N+x] !== 0) return [];
+    const opp = 3 - player, flips = [];
+    for (const [dx, dy] of DIRS) {
+      let cx = x + dx, cy = y + dy;
+      const line = [];
+      while (inb(cx, cy) && bd[cy*N+cx] === opp) { line.push([cx, cy]); cx += dx; cy += dy; }
+      if (line.length && inb(cx, cy) && bd[cy*N+cx] === player) flips.push(...line);
+    }
+    return flips;
+  }
+
+  const movesFor = player => {
+    const m = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+      if (flipsFor(board, x, y, player).length) m.push([x, y]);
+    return m;
+  };
+
+  function place(x, y, player) {
+    const flips = flipsFor(board, x, y, player);
+    if (!flips.length) return false;
+    board[y*N+x] = player;
+    for (const [fx, fy] of flips) board[fy*N+fx] = player;
+    return true;
+  }
+
+  // 手番を進める。パス・終了・CPU手番を判定する
+  function advanceTurn() {
+    turn = 3 - turn;
+    notice = '';
+    if (!movesFor(turn).length) {
+      if (!movesFor(3 - turn).length) { endGame(); return; }
+      notice = (turn === 1 ? '黒' : '白') + 'はパス（打てるところがありません）';
+      turn = 3 - turn;
+    }
+    if (mode === 'cpu' && turn === 2) {
+      setStatus('CPUが考えています…', true);
+      cpuTimer = setTimeout(cpuMove, 650);
+    }
+    draw();
+  }
+
+  // ---------- CPU: ハイレベル（アルファベータ探索） ----------
+  const SEARCH_DEPTH = 5;      // 中盤の先読み手数
+  const EXACT_EMPTIES = 9;     // 残りマスがこれ以下なら終局まで完全読み切り
+  const WF = WEIGHT.flat();
+  // 角の隣のマス → その角（角が埋まったら「危険マス」扱いをやめる）
+  const CORNER_OF = {1:0, 8:0, 9:0, 6:7, 14:7, 15:7, 48:56, 49:56, 57:56, 54:63, 55:63, 62:63};
+
+  function listMoves(bd, player) {
+    const m = [];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const f = flipsFor(bd, x, y, player);
+      if (f.length) m.push({ x, y, f });
+    }
+    return m;
+  }
+  function applyMove(bd, mv, player) {
+    const nb = bd.slice();
+    nb[mv.y*N+mv.x] = player;
+    for (const [fx, fy] of mv.f) nb[fy*N+fx] = player;
+    return nb;
+  }
+  function countMoves(bd, player) {
+    let n = 0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++)
+      if (flipsFor(bd, x, y, player).length) n++;
+    return n;
+  }
+  // me から見た盤面評価（大きいほど有利）
+  function evaluate(bd, me) {
+    const opp = 3 - me;
+    let pos = 0, mine = 0, theirs = 0, empties = 0;
+    for (let i = 0; i < 64; i++) {
+      const c = bd[i];
+      if (!c) { empties++; continue; }
+      let w = WF[i];
+      if (CORNER_OF[i] !== undefined && bd[CORNER_OF[i]] !== 0) w = 5;
+      if (c === me) { pos += w; mine++; } else { pos -= w; theirs++; }
+    }
+    const mob = countMoves(bd, me) - countMoves(bd, opp);
+    let score = pos + mob * 8;
+    if (empties <= 14) score += (mine - theirs) * 4; // 終盤は石数を重視
+    return score;
+  }
+  // negamax + アルファベータ法。player 視点の評価値を返す
+  function search(bd, player, depth, alpha, beta, passed) {
+    const moves = listMoves(bd, player);
+    if (!moves.length) {
+      if (passed) { // 双方打てない＝終局
+        let d = 0;
+        for (let i = 0; i < 64; i++) if (bd[i]) d += bd[i] === player ? 1 : -1;
+        return d * 1000;
+      }
+      return -search(bd, 3 - player, depth, -beta, -alpha, true);
+    }
+    if (depth <= 0) return evaluate(bd, player);
+    moves.sort((a, b) => WF[b.y*N+b.x] - WF[a.y*N+a.x]); // 良さそうな手から読む
+    let best = -Infinity;
+    for (const mv of moves) {
+      const v = -search(applyMove(bd, mv, player), 3 - player, depth - 1, -beta, -alpha, false);
+      if (v > best) best = v;
+      if (best > alpha) alpha = best;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+  function chooseHigh(player) {
+    const moves = listMoves(board, player);
+    if (!moves.length) return null;
+    const empties = board.filter(c => c === 0).length;
+    const depth = empties <= EXACT_EMPTIES ? 64 : SEARCH_DEPTH;
+    moves.sort((a, b) => WF[b.y*N+b.x] - WF[a.y*N+a.x]);
+    let best = null, alpha = -Infinity;
+    for (const mv of moves) {
+      const v = -search(applyMove(board, mv, player), 3 - player, depth - 1, -Infinity, -alpha, false);
+      if (v > alpha) { alpha = v; best = mv; }
+    }
+    return [best.x, best.y];
+  }
+
+  // ---------- CPU: ヘルモード / ナイトメア（反復深化 + 置換表 + 時間制限） ----------
+  // 設定: time=1手の最大思考時間(ms) / maxDepth=中盤の最大先読み / exact=この残りマス数以下なら終局まで読み切りを目指す
+  const LEVELS = {
+    hell:      { time: 1500, maxDepth: 10, exact: 14 },
+    nightmare: { time: 5000, maxDepth: 20, exact: 20 },
+  };
+  let thinkId = 0, worker = null, workerOk = typeof Worker !== 'undefined', mainEngine = null;
+
+  // 自己完結した関数にしてあるので、Web Workerのソースとしてそのまま使える
+  function makeEngine() {
+    const WF = [
+      120,-20, 20,  5,  5, 20,-20,120,
+      -20,-40, -5, -5, -5, -5,-40,-20,
+       20, -5, 15,  3,  3, 15, -5, 20,
+        5, -5,  3,  3,  3,  3, -5,  5,
+        5, -5,  3,  3,  3,  3, -5,  5,
+       20, -5, 15,  3,  3, 15, -5, 20,
+      -20,-40, -5, -5, -5, -5,-40,-20,
+      120,-20, 20,  5,  5, 20,-20,120,
+    ];
+    const CORNER_OF = {1:0, 8:0, 9:0, 6:7, 14:7, 15:7, 48:56, 49:56, 57:56, 54:63, 55:63, 62:63};
+    const DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+    const RAYS = [], NEI = [];
+    for (let i = 0; i < 64; i++) {
+      const x = i & 7, y = i >> 3, rs = [], nb = [];
+      for (const [dx, dy] of DIRS) {
+        const r = [];
+        let cx = x + dx, cy = y + dy;
+        if (cx >= 0 && cx < 8 && cy >= 0 && cy < 8) nb.push(cy*8 + cx);
+        while (cx >= 0 && cx < 8 && cy >= 0 && cy < 8) { r.push(cy*8 + cx); cx += dx; cy += dy; }
+        if (r.length >= 2) rs.push(r);
+      }
+      RAYS.push(rs); NEI.push(nb);
+    }
+    // 角から辺に沿って連続する石（安定石の近似）
+    const EDGES = [[0,1],[0,8],[7,-1],[7,8],[56,1],[56,-8],[63,-1],[63,-8]];
+
+    // Zobristハッシュ & 置換表
+    let seed = 123456789;
+    const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed | 0; };
+    const Z1 = new Int32Array(128), Z2 = new Int32Array(128);
+    for (let i = 0; i < 128; i++) { Z1[i] = rnd(); Z2[i] = rnd(); }
+    const SIDE1 = rnd(), SIDE2 = rnd();
+    const TT_BITS = 20, TT_MASK = (1 << TT_BITS) - 1;
+    const tk = new Int32Array(1 << TT_BITS), ts = new Int32Array(1 << TT_BITS);
+    const td = new Int8Array(1 << TT_BITS).fill(-1), tf = new Int8Array(1 << TT_BITS), tm = new Int8Array(1 << TT_BITS);
+
+    const INF = 1e9, MAXPLY = 100;
+    const MV = [], SC = [], FL = [];
+    for (let i = 0; i < MAXPLY; i++) { MV.push(new Int8Array(40)); SC.push(new Int32Array(40)); FL.push(new Int8Array(24)); }
+
+    let bd = new Int8Array(64), nodes = 0, deadline = 0, aborted = false;
+
+    function canMove(i, p) {
+      if (bd[i] !== 0) return false;
+      const o = 3 - p, rs = RAYS[i];
+      for (let a = 0; a < rs.length; a++) {
+        const r = rs[a];
+        let k = 0;
+        while (k < r.length && bd[r[k]] === o) k++;
+        if (k > 0 && k < r.length && bd[r[k]] === p) return true;
+      }
+      return false;
+    }
+    function make(i, p, out) {
+      const o = 3 - p, rs = RAYS[i];
+      let n = 0;
+      for (let a = 0; a < rs.length; a++) {
+        const r = rs[a];
+        let k = 0;
+        while (k < r.length && bd[r[k]] === o) k++;
+        if (k > 0 && k < r.length && bd[r[k]] === p) for (let j = 0; j < k; j++) out[n++] = r[j];
+      }
+      bd[i] = p;
+      for (let j = 0; j < n; j++) bd[out[j]] = p;
+      return n;
+    }
+    function unmake(i, p, out, n) {
+      bd[i] = 0;
+      const o = 3 - p;
+      for (let j = 0; j < n; j++) bd[out[j]] = o;
+    }
+    function mobility(p) {
+      let n = 0;
+      for (let i = 0; i < 64; i++) if (bd[i] === 0 && canMove(i, p)) n++;
+      return n;
+    }
+    function discDiff(p) {
+      let d = 0;
+      for (let i = 0; i < 64; i++) if (bd[i]) d += bd[i] === p ? 1 : -1;
+      return d;
+    }
+
+    // p 視点の評価値
+    function evaluate(p) {
+      const o = 3 - p;
+      let pos = 0, front = 0, mine = 0, theirs = 0, empties = 0;
+      for (let i = 0; i < 64; i++) {
+        const c = bd[i];
+        if (!c) { empties++; continue; }
+        let w = WF[i];
+        const co = CORNER_OF[i];
+        if (co !== undefined && bd[co] !== 0) w = 5;
+        const sg = c === p ? 1 : -1;
+        pos += sg * w;
+        if (c === p) mine++; else theirs++;
+        const nb = NEI[i];
+        for (let k = 0; k < nb.length; k++) if (bd[nb[k]] === 0) { front += sg; break; }
+      }
+      let stab = 0;
+      for (let e = 0; e < EDGES.length; e++) {
+        const c0 = bd[EDGES[e][0]];
+        if (!c0) continue;
+        const step = EDGES[e][1];
+        let idx = EDGES[e][0], cnt = 0;
+        while (idx >= 0 && idx < 64 && bd[idx] === c0) {
+          cnt++; idx += step;
+          if (step === 1 || step === -1) { if ((idx >> 3) !== (EDGES[e][0] >> 3)) break; }
+        }
+        stab += (c0 === p ? 1 : -1) * cnt;
+      }
+      const mob = mobility(p) - mobility(o);
+      let score = pos + mob * 10 - front * 6 + stab * 25;
+      if (empties <= 14) score += (mine - theirs) * 10;
+      if (empties & 1) score += 6; // 奇数パリティは手番側が有利
+      return score;
+    }
+
+    function negamax(p, depth, alpha, beta, passed, ply) {
+      if ((++nodes & 1023) === 0 && Date.now() > deadline) aborted = true;
+      if (aborted) return 0;
+      const alpha0 = alpha;
+      // 置換表の参照
+      let h1 = p === 2 ? SIDE1 : 0, h2 = p === 2 ? SIDE2 : 0;
+      for (let i = 0; i < 64; i++) { const c = bd[i]; if (c) { h1 ^= Z1[(c-1)*64+i]; h2 ^= Z2[(c-1)*64+i]; } }
+      const slot = h1 & TT_MASK;
+      let ttMove = -1;
+      if (td[slot] >= 0 && tk[slot] === h2) {
+        ttMove = tm[slot];
+        if (td[slot] >= depth) {
+          const v = ts[slot], f = tf[slot];
+          if (f === 0) return v;
+          if (f === 1 && v > alpha) alpha = v;
+          else if (f === 2 && v < beta) beta = v;
+          if (alpha >= beta) return v;
+        }
+      }
+      const mv = MV[ply], sc = SC[ply], fl = FL[ply];
+      let cnt = 0;
+      for (let i = 0; i < 64; i++) if (bd[i] === 0 && canMove(i, p)) mv[cnt++] = i;
+      if (cnt === 0) {
+        if (passed) return discDiff(p) * 1000;
+        return -negamax(3 - p, depth, -beta, -alpha, true, ply + 1);
+      }
+      if (depth <= 0) return evaluate(p);
+      // 手の並べ替え: 置換表の手 → 相手の打てる手が少ない手 → 位置の重み
+      for (let k = 0; k < cnt; k++) {
+        const i = mv[k];
+        let s = WF[i];
+        const co = CORNER_OF[i];
+        if (co !== undefined && bd[co] !== 0) s = 5;
+        if (depth >= 3) {
+          const n = make(i, p, fl);
+          s -= mobility(3 - p) * 25;
+          unmake(i, p, fl, n);
+        }
+        if (i === ttMove) s += 100000;
+        sc[k] = s;
+      }
+      for (let a = 1; a < cnt; a++) {
+        const mi = mv[a], si = sc[a];
+        let b = a - 1;
+        while (b >= 0 && sc[b] < si) { mv[b+1] = mv[b]; sc[b+1] = sc[b]; b--; }
+        mv[b+1] = mi; sc[b+1] = si;
+      }
+      let best = -INF, bestMove = mv[0];
+      for (let k = 0; k < cnt; k++) {
+        const i = mv[k];
+        const n = make(i, p, fl);
+        const v = -negamax(3 - p, depth - 1, -beta, -alpha, false, ply + 1);
+        unmake(i, p, fl, n);
+        if (aborted) return 0;
+        if (v > best) { best = v; bestMove = i; }
+        if (best > alpha) alpha = best;
+        if (alpha >= beta) break;
+      }
+      td[slot] = depth > 100 ? 100 : depth; tk[slot] = h2; ts[slot] = best; tm[slot] = bestMove;
+      tf[slot] = best <= alpha0 ? 2 : (best >= beta ? 1 : 0);
+      return best;
+    }
+
+    // board: 長さ64の配列(0空/1黒/2白) → [x, y]
+    function choose(board, player, cfg) {
+      bd = Int8Array.from(board);
+      let order = [];
+      for (let i = 0; i < 64; i++) if (bd[i] === 0 && canMove(i, player)) order.push(i);
+      if (!order.length) return null;
+      if (order.length === 1) return [order[0] & 7, order[0] >> 3];
+      order.sort((a, b) => WF[b] - WF[a]);
+      let empties = 0;
+      for (let i = 0; i < 64; i++) if (bd[i] === 0) empties++;
+      const maxD = empties <= cfg.exact ? empties : cfg.maxDepth;
+      deadline = Date.now() + cfg.time; aborted = false; nodes = 0;
+      let bestMove = order[0];
+      const fl = new Int8Array(24);
+      for (let d = 1; d <= maxD; d++) {
+        let alpha = -INF, best = order[0];
+        for (const i of order) {
+          const n = make(i, player, fl);
+          const v = -negamax(3 - player, d - 1, -INF, -alpha, false, 1);
+          unmake(i, player, fl, n);
+          if (aborted) break;
+          if (v > alpha) { alpha = v; best = i; }
+        }
+        if (aborted) break;
+        bestMove = best;
+        order = [best].concat(order.filter(i => i !== best)); // 次の深さではこの手から読む
+      }
+      return [bestMove & 7, bestMove >> 3];
+    }
+    return { choose };
+  }
+  // END ENGINE
+
+  function thinkStrong() {
+    const cfg = LEVELS[level];
+    const id = ++thinkId;
+    const snapshot = board.slice();
+    const finish = pos => {
+      if (id !== thinkId || gameOver) return;
+      if (pos) place(pos[0], pos[1], 2);
+      advanceTurn();
+    };
+    const runOnMain = () => {
+      setTimeout(() => {
+        if (id !== thinkId) return;
+        if (!mainEngine) mainEngine = makeEngine();
+        finish(mainEngine.choose(snapshot, 2, cfg));
+      }, 30);
+    };
+    if (workerOk && !worker) {
+      try {
+        const src = '(function(){const E=(' + makeEngine.toString() + ')();' +
+          'onmessage=function(e){postMessage(E.choose(e.data.board,e.data.player,e.data.cfg));};})()';
+        worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      } catch (err) { workerOk = false; worker = null; }
+    }
+    if (worker) {
+      worker.onmessage = e => finish(e.data);
+      worker.onerror = () => { workerOk = false; if (worker) worker.terminate(); worker = null; runOnMain(); };
+      worker.postMessage({ board: snapshot, player: 2, cfg });
+    } else runOnMain();
+  }
+
+  function cpuMove() {
+    if (gameOver) return;
+    if (LEVELS[level]) { thinkStrong(); return; }
+    let best = null;
+    if (level === 'high') {
+      best = chooseHigh(2);
+    } else {
+      let bestScore = -Infinity;
+      for (const [x, y] of movesFor(2)) {
+        const s = WEIGHT[y][x] + flipsFor(board, x, y, 2).length;
+        if (s > bestScore) { bestScore = s; best = [x, y]; }
+      }
+    }
+    if (best) place(best[0], best[1], 2);
+    advanceTurn();
+  }
+
+  function humanTry(x, y) {
+    if (gameOver) return;
+    if (mode === 'cpu' && turn === 2) return; // CPU手番中は無視
+    if (!place(x, y, turn)) return;
+    advanceTurn();
+  }
+
+  function endGame() {
+    gameOver = true;
+    const b = board.filter(c => c === 1).length;
+    const w = board.filter(c => c === 2).length;
+    let text;
+    if (b > w) text = mode === 'cpu' ? (b >= 33 ? 'あなたの勝ち！ 🎉' : '黒の勝ち！ 🎉') : '黒の勝ち！ 🎉';
+    else if (w > b) text = mode === 'cpu' ? 'CPUの勝ち…' : '白の勝ち！';
+    else text = '引き分け！';
+    overlayText.textContent = `${text}　${b} - ${w}`;
+    overlaySub.textContent = 'Aボタン / Enter / Start / R / 下のボタンでもう一度遊べます';
+    overlay.hidden = false;
+    document.getElementById('btnOverlayReset').focus();
+    draw();
+  }
+
+  function setStatus(text, active) {
+    statusEl.textContent = notice || text;
+    statusEl.classList.toggle('active', !!active || !!notice);
+  }
+
+  // ---------- 描画 ----------
+  function draw() {
+    ctx.fillStyle = '#0e9245';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= N; i++) {
+      const p = PAD + i * CELL;
+      ctx.beginPath(); ctx.moveTo(PAD, p); ctx.lineTo(PAD + N*CELL, p); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p, PAD); ctx.lineTo(p, PAD + N*CELL); ctx.stroke();
+    }
+    // 星（天星）
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    for (const [sx, sy] of [[2,2],[2,6],[6,2],[6,6]]) {
+      ctx.beginPath();
+      ctx.arc(PAD + sx*CELL, PAD + sy*CELL, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // 現在の手番（人間）が打てるマス
+    if (!gameOver && !(mode === 'cpu' && turn === 2)) {
+      ctx.fillStyle = turn === 1 ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)';
+      for (const [x, y] of movesFor(turn)) {
+        ctx.beginPath();
+        ctx.arc(PAD + x*CELL + CELL/2, PAD + y*CELL + CELL/2, 7, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    // 石
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const c = board[y*N+x];
+      if (!c) continue;
+      const cx = PAD + x*CELL + CELL/2, cy = PAD + y*CELL + CELL/2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, CELL/2 - 6, 0, Math.PI*2);
+      ctx.fillStyle = c === 1 ? '#111' : '#f5f5f5';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.4)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    // カーソル
+    if (!gameOver) {
+      const cx = PAD + cursor.x*CELL, cy = PAD + cursor.y*CELL;
+      ctx.strokeStyle = '#ffd54a';
+      ctx.lineWidth = 4;
+      roundRect(ctx, cx + 3, cy + 3, CELL - 6, CELL - 6, 10);
+      ctx.stroke();
+    }
+    // スコア
+    scoreBlackEl.textContent = board.filter(c => c === 1).length;
+    scoreWhiteEl.textContent = board.filter(c => c === 2).length;
+    if (!gameOver) {
+      if (mode === 'cpu' && turn === 2) setStatus('CPUが考えています…', true);
+      else setStatus((turn === 1 ? '黒' : '白') + 'の手番', true);
+    } else setStatus('ゲーム終了');
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x+r, y);
+    c.arcTo(x+w, y, x+w, y+h, r);
+    c.arcTo(x+w, y+h, x, y+h, r);
+    c.arcTo(x, y+h, x, y, r);
+    c.arcTo(x, y, x+w, y, r);
+    c.closePath();
+  }
+
+  // ---------- タッチ / マウス ----------
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const px = (e.clientX - r.left) * canvas.width / r.width;
+    const py = (e.clientY - r.top) * canvas.height / r.height;
+    const x = Math.floor((px - PAD) / CELL), y = Math.floor((py - PAD) / CELL);
+    if (!inb(x, y) || gameOver) return;
+    cursor = { x, y };
+    humanTry(x, y);
+    draw();
+  });
+
+  // ---------- キーボード ----------
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase()) || ' ' === e.key) e.preventDefault();
+    if (k === 'arrowup' || k === 'w') moveCursor(0, -1);
+    else if (k === 'arrowdown' || k === 's') moveCursor(0, 1);
+    else if (k === 'arrowleft' || k === 'a') moveCursor(-1, 0);
+    else if (k === 'arrowright' || k === 'd') moveCursor(1, 0);
+    else if (e.key === 'Enter' || e.key === ' ') { if (gameOver) newGame(); else humanTry(cursor.x, cursor.y); }
+    else if (k === 'r') newGame();
+    draw();
+  });
+
+  function moveCursor(dx, dy) {
+    cursor.x = Math.min(N-1, Math.max(0, cursor.x + dx));
+    cursor.y = Math.min(N-1, Math.max(0, cursor.y + dy));
+  }
+
+  // ---------- ゲームパッド ----------
+  window.addEventListener('gamepadconnected', e => {
+    padIndicator.textContent = '🎮 ' + e.gamepad.id.slice(0, 30);
+  });
+  window.addEventListener('gamepaddisconnected', () => {
+    padIndicator.textContent = '🎮 パッド未接続';
+  });
+
+  function pollGamepads() {
+    let pads = [];
+    try {
+      pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    } catch (err) {
+      // iframe内などで権限ポリシーによりゲームパッドが使えない場合は、ポーリングを止める
+      padIndicator.textContent = '🎮 この環境では利用できません';
+      return;
+    }
+    for (const gp of pads) {
+      if (!gp) continue;
+      if (!prevPad[gp.index]) padIndicator.textContent = '🎮 ' + gp.id.slice(0, 30);
+      const prev = prevPad[gp.index] || {};
+      const pressed = i => gp.buttons[i] && gp.buttons[i].pressed;
+      // 方向: 十字キー or 左スティック（デッドゾーン0.5）
+      let dir = '';
+      const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+      if (Math.hypot(ax, ay) > 0.5) dir = Math.abs(ax) > Math.abs(ay) ? (ax > 0 ? 'R' : 'L') : (ay > 0 ? 'D' : 'U');
+      else if (pressed(15)) dir = 'R'; else if (pressed(14)) dir = 'L';
+      else if (pressed(12)) dir = 'U'; else if (pressed(13)) dir = 'D';
+      if (dir && prev.dir !== dir) {
+        if (dir === 'U') moveCursor(0, -1);
+        else if (dir === 'D') moveCursor(0, 1);
+        else if (dir === 'L') moveCursor(-1, 0);
+        else moveCursor(1, 0);
+        draw();
+      }
+      // Aボタン: 確定（終了後は「もう一度あそぶ」）/ Start: リセット（押し上がりエッジ）
+      if (pressed(0) && !prev.a) {
+        if (gameOver) newGame();
+        else { humanTry(cursor.x, cursor.y); draw(); }
+      }
+      if (pressed(9) && !prev.start) newGame();
+      prevPad[gp.index] = { dir, a: pressed(0), start: pressed(9) };
+    }
+    requestAnimationFrame(pollGamepads);
+  }
+
+  // ---------- ボタン ----------
+  document.getElementById('btnReset').addEventListener('click', newGame);
+  document.getElementById('btnOverlayReset').addEventListener('click', newGame);
+  const levelControls = document.getElementById('levelControls');
+  const levelBtns = document.querySelectorAll('.levelBtn');
+  levelBtns.forEach(btn => btn.addEventListener('click', () => {
+    level = btn.dataset.level;
+    levelBtns.forEach(x => x.classList.toggle('selected', x === btn));
+    newGame();
+  }));
+  btnCpu.addEventListener('click', () => { mode = 'cpu'; levelControls.hidden = false; btnCpu.classList.add('selected'); btn2p.classList.remove('selected'); newGame(); });
+  btn2p.addEventListener('click', () => { mode = '2p'; levelControls.hidden = true; btn2p.classList.add('selected'); btnCpu.classList.remove('selected'); newGame(); });
+
+  newGame();
+  requestAnimationFrame(pollGamepads);
+})();
+</script>
+</body>
+</html>

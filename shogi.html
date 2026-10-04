@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>将棋</title>
+<style>
+  :root {
+    --bg: #1a1f2b;
+    --panel: #232a3a;
+    --text: #e8ecf4;
+    --dim: #93a0b8;
+    --accent: #ffd54a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 24px 12px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Yu Gothic UI", "Noto Sans JP", sans-serif;
+  }
+  h1 { margin: 0; font-size: 26px; letter-spacing: 4px; }
+  #status {
+    background: var(--panel); padding: 10px 22px; border-radius: 12px;
+    font-size: 16px; width: min(420px, 100%); text-align: center; color: var(--dim);
+  }
+  #status.active { color: var(--accent); }
+  #status.check { color: #ff7a6e; }
+  #status.prompt { color: #4ad7ff; font-weight: 600; }
+  #promoBar { display: flex; gap: 12px; }
+  #promoBar button, #btnDeclare { border-color: #4ad7ff; color: #4ad7ff; font-weight: 600; }
+  canvas { border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.45);
+           max-width: 100%; height: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button { touch-action: manipulation; }
+  #controls { flex-wrap: wrap; justify-content: center; }
+  #controls { display: flex; gap: 10px; align-items: center; }
+  button {
+    background: var(--panel); color: var(--text);
+    border: 1px solid #3a4661; border-radius: 8px;
+    padding: 8px 16px; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button.selected { background: var(--accent); color: #1a1f2b; border-color: var(--accent); font-weight: 600; }
+  #padIndicator { font-size: 13px; color: var(--dim); }
+  #help { font-size: 13px; color: var(--dim); text-align: center; line-height: 1.8; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(10,13,20,.78);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; font-size: 30px; backdrop-filter: blur(3px);
+  }
+  #overlay .sub { font-size: 15px; color: var(--dim); }
+  #overlay button { font-size: 16px; padding: 10px 26px; }
+  #overlay button:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>将棋</h1>
+<div id="status"></div>
+<canvas id="board" width="560" height="660"></canvas>
+<div id="promoBar" hidden>
+  <button id="btnPromote">成る</button>
+  <button id="btnNoPromote">成らない</button>
+</div>
+<div id="controls">
+  <button id="btnCpu" class="selected">CPU対戦</button>
+  <button id="btn2p">2人プレイ</button>
+  <button id="btnReset">リセット</button>
+  <button id="btnDeclare" hidden>入玉宣言</button>
+  <span id="padIndicator">🎮 パッド未接続</span>
+</div>
+<div id="help">
+  カーソル: ←↑→↓ / WASD / 十字キー・スティック　確定: Enter・スペース・Aボタン　取消: Esc・Bボタン<br>
+  持ち駒の選択: Q / E / LB・RB　リセット: R・Start　成れる手を指すと「成る／成らない」の確認が出ます<br>
+  入玉宣言: 条件を満たすとボタンが出ます（H・Yボタンでも可）／千日手（同一局面4回）は引き分け、連続王手の千日手は王手をかけ続けた側の負け
+</div>
+<div id="overlay" hidden>
+  <div id="overlayText"></div>
+  <div class="sub" id="overlaySub"></div>
+  <button id="btnOverlayReset">もう一度あそぶ</button>
+</div>
+
+<script>
+(() => {
+  const N = 9, CELL = 54, PAD = 37, HAND_H = 87;
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status');
+  const overlay = document.getElementById('overlay');
+  const overlayText = document.getElementById('overlayText');
+  const overlaySub = document.getElementById('overlaySub');
+  const padIndicator = document.getElementById('padIndicator');
+  const btnCpu = document.getElementById('btnCpu');
+  const btn2p = document.getElementById('btn2p');
+  const btnDeclare = document.getElementById('btnDeclare');
+
+  // ---- 駒種 ----
+  const KANJI = {FU:'歩',KY:'香',KE:'桂',GI:'銀',KI:'金',KA:'角',HI:'飛',
+                 TO:'と',NK:'圭',NY:'杏',JU:'全',UMA:'馬',RYU:'竜',OU1:'王',OU2:'玉'};
+  const PROMO = {FU:'TO',KY:'NY',KE:'NK',GI:'JU',KA:'UMA',HI:'RYU'};   // NY=成香(杏) NK=成桂(圭)
+  const UNPROMO = {TO:'FU',NY:'KY',NK:'KE',JU:'GI',UMA:'KA',RYU:'HI'}; // 取った成駒は元の種に戻って手に入る
+  const VAL = {FU:1,KY:5,KE:6,GI:8,KI:9,KA:9,HI:10,TO:9,NK:9,NY:9,JU:9,UMA:12,RYU:13,OU:1000};
+  const HAND_ORDER = ['HI','KA','KI','GI','KE','KY','FU'];
+
+  // 方向はすべて先手（上向き）基準。後手は反転
+  const D8=[[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]];
+  const DGOLD=[[0,-1],[0,1],[1,0],[-1,0],[1,-1],[-1,-1]];      // 斜め後ろ不可
+  const DSILVER=[[0,-1],[1,-1],[-1,-1],[1,1],[-1,1]];           // 銀: 前・斜め前・斜め後ろ（真横・真後ろは不可）
+  const DBISH=[[1,1],[1,-1],[-1,1],[-1,-1]];
+  const DROOK=[[0,-1],[1,0],[0,1],[-1,0]];
+  const DKE=[[1,-2],[-1,-2]];
+  const DLANCE=[[0,-1]];
+
+  const inb=(x,y)=>x>=0&&x<9&&y>=0&&y<9;
+  const idx=(x,y)=>y*9+x;
+  const orient=(d,b)=>b===1?d:[-d[0],-d[1]];
+  const kanjiOf=(t,b)=>t==='OU'?(b===1?KANJI.OU1:KANJI.OU2):KANJI[t];
+  const pieceAt=(board,x,y)=>inb(x,y)?board[idx(x,y)]:null;
+  function firstOnRay(board,x,y,dx,dy){
+    let cx=x+dx, cy=y+dy;
+    while(inb(cx,cy)){ const p=board[idx(cx,cy)]; if(p) return p; cx+=dx; cy+=dy; }
+    return null;
+  }
+
+  // (x,y) が byB 側の利きかどうか（対象マスから逆方向に辿る高速判定）
+  function attacked(board, x, y, byB) {
+    const s = byB === 1 ? -1 : 1;                 // byB の前進方向（行の増減）
+    let p;
+    if ((p=pieceAt(board,x,y-s)) && p.b===byB && p.t==='FU') return true;   // 歩
+    for (const kx of [1,-1])                                                        // 桂
+      if ((p=pieceAt(board,x-kx,y-2*s)) && p.b===byB && p.t==='KE') return true;
+    if ((p=firstOnRay(board,x,y,0,-s)) && p.b===byB && p.t==='KY') return true;     // 香
+    for (const d of DGOLD) {                                                        // 金・成駒
+      const od=orient(d,byB);
+      if ((p=pieceAt(board,x-od[0],y-od[1])) && p.b===byB && ['KI','TO','NK','NY','JU'].includes(p.t)) return true;
+    }
+    for (const d of DSILVER) {                                                      // 銀
+      const od=orient(d,byB);
+      if ((p=pieceAt(board,x-od[0],y-od[1])) && p.b===byB && p.t==='GI') return true;
+    }
+    for (const d of D8) {                                                           // 王・馬・竜（隣接）
+      const od=orient(d,byB);
+      if ((p=pieceAt(board,x-od[0],y-od[1])) && p.b===byB && ['OU','UMA','RYU'].includes(p.t)) return true;
+    }
+    for (const d of DBISH){ const od=orient(d,byB);                                  // 角・馬
+      if ((p=firstOnRay(board,x,y,od[0],od[1])) && p.b===byB && (p.t==='KA'||p.t==='UMA')) return true;
+    }
+    for (const d of DROOK){ const od=orient(d,byB);                                  // 飛・竜
+      if ((p=firstOnRay(board,x,y,od[0],od[1])) && p.b===byB && (p.t==='HI'||p.t==='RYU')) return true;
+    }
+    return false;
+  }
+
+  function kingPos(board, b) {
+    for (let i = 0; i < 81; i++) if (board[i] && board[i].t==='OU' && board[i].b===b) return [i%9,(i/9)|0];
+    return null;
+  }
+
+  const inZone = (b, y) => b===1 ? y<=2 : y>=6;
+
+  // 疑似手生成（盤上 + 持ち駒。王手放置は未チェック）
+  function genPseudo(state, b, capOnly) {
+    const { board, hand } = state;
+    const moves = [];
+    for (let i = 0; i < 81; i++) {
+      const p = board[i];
+      if (!p || p.b !== b) continue;
+      const x = i%9, y = (i/9)|0;
+      const targets = [];
+      for (let d of stepDirs(p.t)) {
+        d = orient(d, b);
+        const tx=x+d[0], ty=y+d[1];
+        if (inb(tx,ty)) { const o = board[idx(tx,ty)]; if (o ? o.b!==b : !capOnly) targets.push([tx,ty]); }
+      }
+      for (let d of slideDirs(p.t)) {
+        d = orient(d, b);
+        let cx=x+d[0], cy=y+d[1];
+        while (inb(cx,cy)) {
+          if (board[idx(cx,cy)]) { if (board[idx(cx,cy)].b!==b) targets.push([cx,cy]); break; }
+          if (!capOnly) targets.push([cx,cy]);
+          cx+=d[0]; cy+=d[1];
+        }
+      }
+      for (const [tx,ty] of targets) {
+        if (PROMO[p.t] && !p.promoted) {
+          const canPromo = inZone(b,y) || inZone(b,ty);
+          const mustPromo = ((p.t==='FU'||p.t==='KY') && (b===1 ? ty===0 : ty===8)) ||
+                            (p.t==='KE' && (b===1 ? ty<=1 : ty>=7));
+          if (mustPromo) moves.push({ from:[x,y], to:[tx,ty], promo:true });
+          else {
+            moves.push({ from:[x,y], to:[tx,ty], promo:false });
+            if (canPromo) moves.push({ from:[x,y], to:[tx,ty], promo:true });
+          }
+        } else moves.push({ from:[x,y], to:[tx,ty], promo:false });
+      }
+    }
+    if (capOnly) return moves;                                            // 取る手だけ欲しいとき持ち駒は不要
+    for (const t of HAND_ORDER) {
+      if (!hand[b][t]) continue;
+      for (let y=0;y<9;y++) for (let x=0;x<9;x++) {
+        if (board[idx(x,y)]) continue;
+        if (t==='FU' && hasFuFile(state,b,x)) continue;                       // 二歩
+        if ((t==='FU'||t==='KY') && (b===1 ? y===0 : y===8)) continue;        // 行き所のない駒
+        if (t==='KE' && (b===1 ? y<=1 : y>=7)) continue;
+        moves.push({ drop:t, to:[x,y] });
+      }
+    }
+    return moves;
+  }
+  function stepDirs(t){
+    switch(t){
+      case 'FU': return [[0,-1]];
+      case 'KE': return DKE;
+      case 'GI': return DSILVER;
+      case 'KI': case 'TO': case 'NK': case 'NY': case 'JU': return DGOLD;
+      case 'OU': case 'UMA': case 'RYU': return D8;
+      default: return [];
+    }
+  }
+  function slideDirs(t){
+    switch(t){
+      case 'KY': return DLANCE;
+      case 'KA': case 'UMA': return DBISH;
+      case 'HI': case 'RYU': return DROOK;
+      default: return [];
+    }
+  }
+  function hasFuFile(state, b, x) {
+    for (let y=0;y<9;y++){ const p=state.board[idx(x,y)]; if (p && p.b===b && p.t==='FU') return true; }
+    return false;
+  }
+
+  // 合法手。kp は王の位置（呼び出し側から渡して探索を速くする）
+  // rootCheck=true のとき打ち歩詰めも除外
+  function genLegal(state, b, rootCheck, kp, capOnly) {
+    kp = kp || kingPos(state.board, b);
+    const out = [];
+    for (const m of genPseudo(state, b, capOnly)) {
+      const undo = make(state, m, b);
+      const k = (kp && m.from && m.from[0]===kp[0] && m.from[1]===kp[1]) ? m.to : kp;
+      if (k && !attacked(state.board, k[0], k[1], 3-b)) {
+        if (!(rootCheck && m.drop==='FU' && !genLegal(state, 3-b, false).length)) out.push(m); // 打ち歩詰め
+      }
+      unmake(state, m, undo, b);
+    }
+    return out;
+  }
+
+  // ---- make / unmake（b: 指す側）----
+  function make(state, m, b) {
+    const { board, hand } = state;
+    if (m.drop) {
+      hand[b][m.drop]--;
+      board[idx(...m.to)] = { t: m.drop, b };
+      return { drop:true, type:m.drop, to:m.to };
+    }
+    const [fx,fy]=m.from, [tx,ty]=m.to;
+    const p = board[idx(fx,fy)];
+    const cap = board[idx(tx,ty)];
+    board[idx(fx,fy)] = null;
+    board[idx(tx,ty)] = { t: m.promo ? PROMO[p.t] : p.t, b: p.b, promoted: p.promoted || m.promo };
+    if (cap) { const hk = UNPROMO[cap.t] || cap.t; hand[b][hk] = (hand[b][hk]||0) + 1; return { drop:false, from:[fx,fy], to:[tx,ty], moved:p, captured:cap, handKey:hk }; }
+    return { drop:false, from:[fx,fy], to:[tx,ty], moved:p, captured:cap };
+  }
+  function unmake(state, m, u, b) {
+    const { board, hand } = state;
+    if (u.drop) { board[idx(...u.to)] = null; hand[b][u.type]++; return; }
+    board[idx(...u.from)] = u.moved;
+    board[idx(...u.to)] = u.captured || null;
+    if (u.captured) hand[b][u.handKey]--;
+  }
+
+  // ---- 評価（駒割 + 軽い位置評価）----
+  // 駒割が主役。位置評価は合計しても歩1枚(=1.0)を超えにくい小さな重みにしてある:
+  //   歩・銀・桂の前進 / 玉の周囲の金銀 / 敵玉の周囲(2マス以内)の自駒 / 玉が前に出すぎる減点
+  function evaluate(state, b) {
+    const bd = state.board;
+    const mat = [0,0,0], pos = [0,0,0], K = [null,null,null];
+    for (let i=0;i<81;i++){
+      const p = bd[i]; if (!p) continue;
+      const side = p.b, y = (i/9)|0;
+      if (p.t === 'OU') { K[side] = i; continue; }
+      mat[side] += VAL[p.t];
+      const adv = side===1 ? 8-y : y;                // 自陣の最下段からの進出段数
+      if (p.t==='FU') pos[side] += 0.06*adv;
+      else if (p.t==='GI' || p.t==='KE') pos[side] += 0.04*adv;
+    }
+    for (const side of [1,2]) {
+      for (const t of HAND_ORDER) mat[side] += (state.hand[side][t]||0)*VAL[t]*1.1;
+      const ki = K[side]; if (ki === null) continue;
+      const kx = ki%9, ky = (ki/9)|0;
+      let guard = 0;
+      for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++) {
+        const p = pieceAt(bd,kx+dx,ky+dy);
+        if (p && p.b===side && (p.t==='KI'||p.t==='GI'||p.t==='JU')) guard++;
+      }
+      pos[side] += 0.3*Math.min(guard,4);
+      pos[side] -= 0.08*(side===1 ? 8-ky : ky);       // 玉の前進は軽く減点（入玉は宣言法で別扱い）
+      const ei = K[3-side];
+      if (ei !== null) {
+        const ex = ei%9, ey = (ei/9)|0; let near = 0;
+        for (let dy=-2;dy<=2;dy++) for (let dx=-2;dx<=2;dx++) {
+          const p = pieceAt(bd,ex+dx,ey+dy);
+          if (p && p.b===side && p.t!=='OU') near++;
+        }
+        pos[side] += 0.15*Math.min(near,5);
+      }
+    }
+    return (mat[b]-mat[3-b]) + (pos[b]-pos[3-b]);
+  }
+
+  const MATE = 100000;
+  let nodes = 0;
+
+  const QMAX = 6;            // 静止探索の最大深さ
+  const kpAfter = (kp, m) => (kp && m.from && m.from[0]===kp[0] && m.from[1]===kp[1]) ? m.to : kp;
+
+  function search(state, b, depth, alpha, beta, ply, kpMe, kpOp) {
+    nodes++;
+    if (depth === 0) return qsearch(state, b, alpha, beta, ply, kpMe, kpOp, 0);
+    const moves = genLegal(state, b, false, kpMe);
+    if (!moves.length) return -MATE + ply;
+    moves.sort((a,z)=>moveScore(state,z)-moveScore(state,a));
+    for (const m of moves) {
+      const undo = make(state, m, b);
+      const v = -search(state, 3-b, depth-1, -beta, -alpha, ply+1, kpOp, kpAfter(kpMe, m));
+      unmake(state, m, undo, b);
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return alpha;
+  }
+
+  // 静止探索: 取り合いが落ち着くまで読む（読みの最後が自分の取りで終わる「水平線効果」を抑える）。
+  // 王手されているときは全応手を読み、逃げ道がなければ詰みとして返す。
+  function qsearch(state, b, alpha, beta, ply, kpMe, kpOp, qd) {
+    nodes++;
+    if (qd >= QMAX) return evaluate(state, b);
+    const inCheck = kpMe && attacked(state.board, kpMe[0], kpMe[1], 3-b);
+    let moves;
+    if (inCheck) {
+      moves = genLegal(state, b, false, kpMe);
+      if (!moves.length) return -MATE + ply;
+    } else {
+      const stand = evaluate(state, b);
+      if (stand >= beta) return stand;
+      if (stand > alpha) alpha = stand;
+      moves = genLegal(state, b, false, kpMe, true);
+    }
+    moves.sort((a,z)=>moveScore(state,z)-moveScore(state,a));
+    for (const m of moves) {
+      const undo = make(state, m, b);
+      const v = -qsearch(state, 3-b, -beta, -alpha, ply+1, kpOp, kpAfter(kpMe, m), qd+1);
+      unmake(state, m, undo, b);
+      if (v > alpha) alpha = v;
+      if (alpha >= beta) break;
+    }
+    return alpha;
+  }
+  function moveScore(state, m) {
+    if (m.drop) return 50 + VAL[m.drop];
+    let s = 0;
+    const p = state.board[idx(...m.from)];
+    const cap = state.board[idx(...m.to)];
+    if (cap) s += 1000 + VAL[cap.t]*10 - VAL[p.t];                      // MVV-LVA
+    if (m.promo) s += 500 + (VAL[PROMO[p.t]] - VAL[p.t]);
+    return s;
+  }
+
+  // ---- ゲーム状態 ----
+  let state, turn, cursor, sel, promoSel, mode = 'cpu', gameOver, cpuTimer, lastMove, result, hist, repCount, cursorVisible = false;   // カーソルはキー/パッド操作を始めたときだけ表示
+  const prevPad = {};
+
+  // ---- 千日手（同一局面4回）----
+  // 局面 = 盤面 + 持ち駒 + 手番。連続王手の千日手は、サイクル中の自分の手がすべて王手だった側の負け。
+  function positionKey(st, nextTurn) {
+    let k = nextTurn + '|';
+    for (let i=0;i<81;i++) { const p = st.board[i]; k += p ? p.t + p.b : '.'; k += ','; }
+    for (const side of [1,2]) { k += '|'; for (const t of HAND_ORDER) k += (st.hand[side][t]||0) + ','; }
+    return k;
+  }
+  function givesCheckTo(nextTurn) {
+    const kp = kingPos(state.board, nextTurn);
+    return !!(kp && attacked(state.board, kp[0], kp[1], 3-nextTurn));
+  }
+  function recordPosition() {
+    const key = positionKey(state, turn);
+    hist.push({ key, turn, chk: givesCheckTo(turn) });
+    repCount.set(key, (repCount.get(key)||0) + 1);
+  }
+  function resetHistory() { hist = []; repCount = new Map(); recordPosition(); }
+  // 直前に追加した局面が4回目なら結果を返す: {type:'sennichite'} | {type:'perpetual', loser}
+  function repetitionOutcome() {
+    const last = hist.length - 1, key = hist[last].key;
+    if ((repCount.get(key)||0) < 4) return null;
+    const idxs = [];
+    for (let i=0;i<=last;i++) if (hist[i].key === key) idxs.push(i);
+    const i1 = idxs[idxs.length-4];
+    const moved = [false,false,false], allCheck = [true,true,true];
+    for (let j=i1+1;j<=last;j++) {
+      const mover = 3 - hist[j].turn;
+      moved[mover] = true;
+      if (!hist[j].chk) allCheck[mover] = false;
+    }
+    const l1 = moved[1] && allCheck[1], l2 = moved[2] && allCheck[2];
+    if (l1 && !l2) return { type:'perpetual', loser:1 };
+    if (l2 && !l1) return { type:'perpetual', loser:2 };
+    return { type:'sennichite' };
+  }
+  // CPUの先読み用: 指した直後（手番 nextTurn）の局面が4回目になるか、履歴を汚さずに調べる
+  function peekRepetition(nextTurn) {
+    const key = positionKey(state, nextTurn);
+    if ((repCount.get(key)||0) < 3) return null;
+    hist.push({ key, turn: nextTurn, chk: givesCheckTo(nextTurn) });
+    repCount.set(key, repCount.get(key)+1);
+    const r = repetitionOutcome();
+    hist.pop(); repCount.set(key, repCount.get(key)-1);
+    return r;
+  }
+
+  // ---- 入玉宣言（27点法）----
+  // 玉が敵陣3段目以内・王手されていない・敵陣の自駒(玉除く)10枚以上・
+  // 点数（大駒5・小駒1、敵陣の駒＋持ち駒）が先手28点／後手27点以上
+  const BIGPIECE = { HI:1, KA:1, RYU:1, UMA:1 };
+  function declareInfo(b) {
+    const kp = kingPos(state.board, b);
+    if (!kp || !inZone(b, kp[1]) || attacked(state.board, kp[0], kp[1], 3-b)) return { ok:false };
+    let cnt = 0, pts = 0;
+    for (let i=0;i<81;i++) {
+      const p = state.board[i];
+      if (!p || p.b!==b || p.t==='OU' || !inZone(b, (i/9)|0)) continue;
+      cnt++; pts += BIGPIECE[p.t] ? 5 : 1;
+    }
+    for (const t of HAND_ORDER) pts += (state.hand[b][t]||0) * (BIGPIECE[t] ? 5 : 1);
+    const need = b===1 ? 28 : 27;
+    return { ok: cnt>=10 && pts>=need, cnt, pts, need };
+  }
+  const canDeclare = b => declareInfo(b).ok;
+  function declareWin(b) { endGame(3-b, '入玉宣言'); }
+  function tryDeclare() {
+    if (gameOver || promoSel || !humanTurn(turn) || !canDeclare(turn)) return;
+    declareWin(turn); draw();
+  }
+
+  function newState() {
+    const board = new Array(81).fill(null);
+    const back = ['KY','KE','GI','KI','OU','KI','GI','KE','KY'];
+    for (let x=0;x<9;x++){
+      board[idx(x,0)]={t:back[x],b:2}; board[idx(x,8)]={t:back[x],b:1};
+      board[idx(x,2)]={t:'FU',b:2};    board[idx(x,6)]={t:'FU',b:1};
+    }
+    board[idx(1,1)]={t:'HI',b:2}; board[idx(7,1)]={t:'KA',b:2};
+    board[idx(1,7)]={t:'KA',b:1}; board[idx(7,7)]={t:'HI',b:1};
+    return { board, hand:{1:{},2:{}} };
+  }
+
+  function newGame() {
+    clearTimeout(cpuTimer);
+    state = newState();
+    turn = 1;
+    cursor = { x: 4, y: 4 };
+    sel = null;
+    promoSel = null;
+    showPromoBar(false);
+    gameOver = false;
+    lastMove = null;
+    result = null;
+    resetHistory();
+    overlay.hidden = true;
+    draw();
+  }
+
+  const promoBar = document.getElementById('promoBar');
+  function showPromoBar(v) { promoBar.hidden = !v; }
+
+  function answerPromo(promote) {
+    if (!promoSel) return;
+    const m = { from: promoSel.from, to: promoSel.to, promo: promote };
+    promoSel = null;
+    showPromoBar(false);
+    doMove(m);
+  }
+
+  const humanTurn = b => mode === '2p' || b === 1;
+
+  function tryConfirm(x, y) {
+    if (gameOver || !humanTurn(turn)) return;
+    const legal = genLegal(state, turn, true);
+    if (sel) {
+      const matches = legal.filter(m =>
+        (sel.from ? !m.drop && m.from[0]===sel.from[0] && m.from[1]===sel.from[1] : m.drop===sel.hand) &&
+        m.to[0]===x && m.to[1]===y);
+      if (matches.length) {
+        const promoAlt = matches.find(m => m.promo);
+        const plain = matches.find(m => !m.promo);
+        sel = null;
+        if (promoAlt && plain) { // 成る/成らない選べる → 確認を出す
+          promoSel = { from: plain.from, to: [x, y] };
+          showPromoBar(true);
+          return;
+        }
+        doMove(promoAlt || plain); return;
+      }
+    }
+    const p = state.board[idx(x, y)];
+    sel = (p && p.b === turn) ? { from: [x, y] } : null;
+  }
+
+  function tryConfirmHand(type, side) {
+    if (gameOver || !humanTurn(turn)) return;
+    if (side !== turn) return; // 相手の持ち駒欄は選べない
+    sel = state.hand[turn][type] > 0 ? { hand: type } : null;
+  }
+
+  function cycleHand(dir) {
+    if (gameOver || !humanTurn(turn)) return;
+    const have = HAND_ORDER.filter(t => state.hand[turn][t] > 0);
+    if (!have.length) return;
+    const cur = sel && sel.hand ? have.indexOf(sel.hand) : -1;
+    sel = { hand: have[(cur + dir + have.length) % have.length] };
+    draw();
+  }
+
+  function doMove(m) {
+    make(state, m, turn);
+    lastMove = m;
+    turn = 3 - turn;
+    recordPosition();
+    if (!genLegal(state, turn, true).length) { endGame(turn, '詰み'); return; } // 詰み（詰みが千日手より優先）
+    const rep = repetitionOutcome();
+    if (rep) {
+      if (rep.type === 'perpetual') endGame(rep.loser, '連続王手の千日手');
+      else endDraw('千日手');
+      return;
+    }
+    if (mode === 'cpu' && turn === 2) {
+      draw();
+      cpuTimer = setTimeout(cpuMove, 350);
+    }
+    draw();
+  }
+
+  // ---- CPU ----
+  // 根の手を1手指したあと DEPTH 手読み + 静止探索（既定は計3手読み＋取り合い）。
+  // 最善手から MARGIN 以内の手は同等とみなして乱数で選ぶ（毎回同じ展開になるのを避ける）。
+  // 根では窓を (最善-MARGIN, ∞) に絞って枝刈りしつつ、同等手のスコアは正確に得る。
+  let DEPTH = 2;            // 3にすると強くなるが、終盤の最悪ケースで数秒かかる
+  const MARGIN = 0.1;
+  const TIME_LIMIT = 2500;  // ms。超えたら残りの根の手は読まず、ここまでの最善手で指す（終盤の駒数が多い局面の保険）
+
+  function chooseMove(b) {
+    nodes = 0;
+    const opp = 3 - b;
+    const legal = genLegal(state, b, true);
+    if (!legal.length) return null;
+    legal.sort((a,z)=>moveScore(state,z)-moveScore(state,a));
+    const kpMe = kingPos(state.board, b), kpOp = kingPos(state.board, opp);
+    let bestV = -Infinity;
+    const scored = [];
+    const t0 = Date.now();
+    for (const m of legal) {
+      if (scored.length && Date.now() - t0 > TIME_LIMIT) break;
+      const undo = make(state, m, b);
+      const lo = bestV === -Infinity ? -Infinity : bestV - MARGIN;
+      let v;
+      const rep = peekRepetition(opp);                      // この手で千日手が成立するか
+      if (rep) v = rep.type === 'sennichite' ? 0 : (rep.loser === b ? -MATE : MATE);   // 引き分けは0点扱い: 優勢なら避け、劣勢なら選ぶ
+      else v = -search(state, opp, DEPTH, -Infinity, -lo, 1, kpOp, kpAfter(kpMe, m));
+      unmake(state, m, undo, b);
+      if (v > lo) { scored.push({ m, v }); if (v > bestV) bestV = v; }
+    }
+    const cands = scored.filter(c => c.v >= bestV - MARGIN);
+    return cands[(Math.random()*cands.length)|0].m;
+  }
+
+  function cpuMove() {
+    if (gameOver) return;
+    if (canDeclare(2)) { declareWin(2); return; }
+    const best = chooseMove(2);
+    if (best) doMove(best);
+  }
+
+  function endGame(loser, reason) {
+    gameOver = true;
+    const winner = 3 - loser;
+    result = { type: reason, winner, loser };
+    let text;
+    if (mode === 'cpu') text = winner === 1 ? 'あなたの勝ち！ 🎉' : 'CPUの勝ち…';
+    else text = winner === 1 ? '先手の勝ち！ 🎉' : '後手の勝ち！ 🎉';
+    overlayText.textContent = text + '（' + reason + '）';
+    overlaySub.textContent = 'Aボタン / Enter / Start / R / 下のボタンでもう一度遊べます';
+    overlay.hidden = false;
+    document.getElementById('btnOverlayReset').focus();
+    draw();
+  }
+
+  function endDraw(reason) {
+    gameOver = true;
+    result = { type: reason, draw: true };
+    overlayText.textContent = '引き分け（' + reason + '）';
+    overlaySub.textContent = 'Aボタン / Enter / Start / R / 下のボタンでもう一度遊べます';
+    overlay.hidden = false;
+    document.getElementById('btnOverlayReset').focus();
+    draw();
+  }
+
+  function setStatus() {
+    let text, cls = 'active';
+    if (promoSel) { statusEl.textContent = '成りますか？　確定（Enter / A / Y）＝成る　取消（Esc / B / N）＝成らない'; statusEl.className = 'prompt'; return; }
+    if (gameOver) { text = 'ゲーム終了'; cls = ''; }
+    else if (mode === 'cpu' && turn === 2) text = 'CPUが考えています…';
+    else {
+      text = (turn===1?'先手':'後手') + 'の手番';
+      const kp = kingPos(state.board, turn);
+      if (kp && attacked(state.board, kp[0], kp[1], 3-turn)) { text = '王手です！'; cls = 'check'; }
+    }
+    statusEl.textContent = text;
+    statusEl.className = cls;
+  }
+
+  // ---- 描画 ----
+  function draw() {
+    ctx.fillStyle = '#1a1f2b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const oy = HAND_H;
+    ctx.fillStyle = '#0e9245';
+    ctx.fillRect(PAD, oy, N*CELL, N*CELL);
+    ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.lineWidth = 1.5;
+    for (let i=0;i<=N;i++){
+      const p = PAD + i*CELL;
+      ctx.beginPath(); ctx.moveTo(PAD, p); ctx.lineTo(PAD+N*CELL, p); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p, oy); ctx.lineTo(p, oy+N*CELL); ctx.stroke();
+    }
+    // 盤の枠（上下の持ち駒欄との区切り）
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.strokeRect(PAD-10, oy-10, N*CELL+20, N*CELL+20);
+    if (lastMove) {
+      ctx.fillStyle = 'rgba(255,213,74,.4)';
+      ctx.beginPath();
+      ctx.arc(PAD+lastMove.to[0]*CELL+CELL/2, oy+lastMove.to[1]*CELL+CELL/2, 8, 0, Math.PI*2);
+      ctx.fill();
+    }
+    if (sel && sel.from) {
+      ctx.strokeStyle = '#4ad7ff'; ctx.lineWidth = 3;
+      roundRect(ctx, PAD+sel.from[0]*CELL+2, oy+sel.from[1]*CELL+2, CELL-4, CELL-4, 8);
+      ctx.stroke();
+    }
+    if (promoSel) { // 成り確認中の対象マス
+      ctx.strokeStyle = '#4ad7ff'; ctx.lineWidth = 3;
+      roundRect(ctx, PAD+promoSel.to[0]*CELL+2, oy+promoSel.to[1]*CELL+2, CELL-4, CELL-4, 8);
+      ctx.stroke();
+    }
+    for (let y=0;y<9;y++) for (let x=0;x<9;x++){
+      const p = state.board[idx(x,y)];
+      if (!p) continue;
+      drawPiece(kanjiOf(p.t, p.b), p.b, PAD+x*CELL+CELL/2, oy+y*CELL+CELL/2, CELL*0.42);
+    }
+    drawHand(2, 0);
+    drawHand(1, oy+N*CELL);
+    if (!gameOver && cursorVisible) {
+      ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3.5;
+      roundRect(ctx, PAD+cursor.x*CELL+2, oy+cursor.y*CELL+2, CELL-4, CELL-4, 8);
+      ctx.stroke();
+    }
+    setStatus();
+    btnDeclare.hidden = !(!gameOver && !promoSel && humanTurn(turn) && canDeclare(turn));
+  }
+
+  function drawHand(b, top) {
+    const have = HAND_ORDER.filter(t => state.hand[b][t] > 0);
+    let x = 20;
+    for (const t of have) {
+      if (sel && sel.hand === t && turn === b) {
+        ctx.strokeStyle = '#4ad7ff'; ctx.lineWidth = 2.5;
+        roundRect(ctx, x-16, top+8, 44, 70, 8); ctx.stroke();
+      }
+      drawPiece(KANJI[t], b, x+6, top+40, 22);
+      if (state.hand[b][t] > 1) {
+        ctx.fillStyle = '#e8ecf4';
+        ctx.font = '13px "Segoe UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('×'+state.hand[b][t], x+6, top+78);
+      }
+      x += 52;
+    }
+    if (!have.length) {
+      ctx.fillStyle = 'rgba(147,160,184,.4)';
+      ctx.font = '12px "Segoe UI", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('持ち駒', 12, top+48);
+    }
+  }
+
+  function drawPiece(kj, b, cx, cy, r) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (b === 2) ctx.rotate(Math.PI);
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r*0.78, -r*0.28);
+    ctx.lineTo(r*0.62, r);
+    ctx.lineTo(-r*0.62, r);
+    ctx.lineTo(-r*0.78, -r*0.28);
+    ctx.closePath();
+    ctx.fillStyle = b === 1 ? '#e8d9a8' : '#3a4661';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.5)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = b === 1 ? '#222' : '#e8ecf4';
+    ctx.font = `${Math.round(r*1.1)}px "Yu Mincho", "MS Mincho", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(kj, 0, r*0.18);
+    ctx.restore();
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x+r, y);
+    c.arcTo(x+w, y, x+w, y+h, r);
+    c.arcTo(x+w, y+h, x, y+h, r);
+    c.arcTo(x, y+h, x, y, r);
+    c.arcTo(x, y, x+w, y, r);
+    c.closePath();
+  }
+
+  // ---- 入力: キーボード ----
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k) || e.key==='Enter') e.preventDefault();
+    if (gameOver && (e.key==='Enter' || k===' ')) { newGame(); return; }
+    if (promoSel) {
+      if (e.key==='Enter'||k===' '||k==='y') answerPromo(true);
+      else if (k==='escape'||k==='b'||k==='n') answerPromo(false);
+      return;
+    }
+    if (k==='arrowup'||k==='w') moveCursor(0,-1);
+    else if (k==='arrowdown'||k==='s') moveCursor(0,1);
+    else if (k==='arrowleft'||k==='a') moveCursor(-1,0);
+    else if (k==='arrowright'||k==='d') moveCursor(1,0);
+    else if (e.key==='Enter'||k===' ') confirmCursor();
+    else if (k==='escape'||k==='b') sel = null;
+    else if (k==='q') cycleHand(-1);
+    else if (k==='e') cycleHand(1);
+    else if (k==='h') { tryDeclare(); return; }
+    else if (k==='r') { newGame(); return; }
+    draw();
+  });
+
+  function moveCursor(dx, dy) {
+    cursorVisible = true;
+    cursor.x = Math.min(8, Math.max(0, cursor.x+dx));
+    cursor.y = Math.min(8, Math.max(0, cursor.y+dy));
+  }
+  function confirmCursor() {
+    if (!cursorVisible) { cursorVisible = true; return; }   // 非表示のカーソル位置で勝手に決定しない。まず表示するだけ
+    tryConfirm(cursor.x, cursor.y);
+  }
+
+  // ---- 入力: マウス ----
+  canvas.addEventListener('click', e => {
+    cursorVisible = false;                // マウス/タップ操作に切り替わったらカーソルは隠す
+    if (promoSel) return; // 成り確認中はボタン/キーで回答
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX-r.left)*canvas.width/r.width;
+    const my = (e.clientY-r.top)*canvas.height/r.height;
+    const oy = HAND_H;
+    if (my>=oy && my<oy+N*CELL && mx>=PAD && mx<PAD+N*CELL) {
+      tryConfirm(Math.floor((mx-PAD)/CELL), Math.floor((my-oy)/CELL));
+    } else if (my < HAND_H) {
+      const t = handSlotAt(mx, my, 2); if (t) tryConfirmHand(t, 2);
+    } else if (my >= oy+N*CELL) {
+      const t = handSlotAt(mx, my, 1); if (t) tryConfirmHand(t, 1);
+    }
+    draw();
+  });
+  function handSlotAt(mx, my, b) {
+    const have = HAND_ORDER.filter(t => state.hand[b][t] > 0);
+    const top = b===2 ? 0 : HAND_H+N*CELL;
+    let x = 20;
+    for (const t of have) {
+      if (mx>=x-16 && mx<x+28 && my>=top && my<top+HAND_H) return t;
+      x += 52;
+    }
+    return null;
+  }
+
+  // ---- 入力: ゲームパッド ----
+  window.addEventListener('gamepadconnected', e => {
+    padIndicator.textContent = '🎮 ' + e.gamepad.id.slice(0, 30);
+  });
+  window.addEventListener('gamepaddisconnected', () => {
+    padIndicator.textContent = '🎮 パッド未接続';
+  });
+
+  function pollGamepads() {
+    let pads;
+    try { pads = navigator.getGamepads ? navigator.getGamepads() : []; }
+    catch (e) {   // 埋め込みプレビューなど permissions policy でゲームパッドが禁止された環境: パッド入力だけ無効にして続行
+      padIndicator.textContent = '🎮 この環境では使えません';
+      return;
+    }
+    for (const gp of pads) {
+      if (!gp) continue;
+      if (!prevPad[gp.index]) padIndicator.textContent = '🎮 ' + gp.id.slice(0, 30);
+      const prev = prevPad[gp.index] || {};
+      const pressed = i => gp.buttons[i] && gp.buttons[i].pressed;
+      let dir = '';
+      const ax = gp.axes[0]||0, ay = gp.axes[1]||0;
+      if (Math.hypot(ax,ay) > 0.5) dir = Math.abs(ax)>Math.abs(ay) ? (ax>0?'R':'L') : (ay>0?'D':'U');
+      else if (pressed(15)) dir='R'; else if (pressed(14)) dir='L';
+      else if (pressed(12)) dir='U'; else if (pressed(13)) dir='D';
+      if (dir && prev.dir !== dir) {
+        if (dir==='U') moveCursor(0,-1);
+        else if (dir==='D') moveCursor(0,1);
+        else if (dir==='L') moveCursor(-1,0);
+        else moveCursor(1,0);
+        draw();
+      }
+      if (pressed(0) && !prev.a) { if (gameOver) newGame(); else if (promoSel) answerPromo(true); else confirmCursor(); draw(); }
+      if (pressed(1) && !prev.b) { if (promoSel) answerPromo(false); else sel = null; draw(); }
+      if (pressed(4) && !prev.lb) cycleHand(-1);
+      if (pressed(5) && !prev.rb) cycleHand(1);
+      if (pressed(3) && !prev.y) tryDeclare();
+      if (pressed(9) && !prev.start) newGame();
+      prevPad[gp.index] = { dir, a:pressed(0), b:pressed(1), lb:pressed(4), rb:pressed(5), y:pressed(3), start:pressed(9) };
+    }
+    requestAnimationFrame(pollGamepads);
+  }
+
+  // ---- ボタン ----
+  document.getElementById('btnReset').addEventListener('click', newGame);
+  btnDeclare.addEventListener('click', tryDeclare);
+  document.getElementById('btnOverlayReset').addEventListener('click', newGame);
+  document.getElementById('btnPromote').addEventListener('click', () => answerPromo(true));
+  document.getElementById('btnNoPromote').addEventListener('click', () => answerPromo(false));
+  btnCpu.addEventListener('click', () => { mode='cpu'; btnCpu.classList.add('selected'); btn2p.classList.remove('selected'); newGame(); });
+  btn2p.addEventListener('click', () => { mode='2p'; btn2p.classList.add('selected'); btnCpu.classList.remove('selected'); newGame(); });
+
+  newGame();
+  requestAnimationFrame(pollGamepads);
+  window.__shogi = { get state(){return state}, get turn(){return turn}, get sel(){return sel}, get promoSel(){return promoSel}, get cursor(){return cursor}, get cursorVisible(){return cursorVisible}, moveCursor, confirmCursor,
+    genLegal, make, unmake, attacked, kingPos, doMove, search, qsearch, evaluate, tryConfirm, answerPromo, setMode(m){mode=m;}, newGame,
+    chooseMove, declareInfo, canDeclare, resetHistory, peekRepetition, setDepth(d){DEPTH=d;}, get gameOver(){return gameOver}, get result(){return result}, get hist(){return hist} };
+})();
+</script>
+</body>
+</html>
