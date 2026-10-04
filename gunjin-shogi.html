@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>軍人将棋</title>
+<style>
+  :root { --bg:#1a1f2b; --panel:#232a3a; --text:#e8ecf4; --dim:#93a0b8; --accent:#ffd54a; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:12px;
+    padding:20px 12px; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI","Yu Gothic UI","Noto Sans JP",sans-serif; }
+  h1 { margin:0; font-size:26px; letter-spacing:4px; }
+  #status { background:var(--panel); padding:10px 18px; border-radius:12px; font-size:16px;
+    width:min(544px,100%); text-align:center; color:var(--accent); }
+  #info { font-size:13px; color:var(--dim); width:min(544px,100%); text-align:center; min-height:20px; }
+  canvas { width:min(544px,100%); height:auto; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.45);
+    touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+  #controls { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  button { background:var(--panel); color:var(--text); border:1px solid #3a4661; border-radius:8px;
+    padding:10px 18px; font-size:14px; cursor:pointer; font-family:inherit; touch-action:manipulation; }
+  button:hover { border-color:var(--accent); }
+  #help { font-size:12.5px; color:var(--dim); line-height:1.8; width:min(544px,100%); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<h1>軍人将棋</h1>
+<div id="status"></div>
+<canvas id="board" width="544" height="608"></canvas>
+<div id="info"></div>
+<div id="controls">
+  <button id="btnShuffle">配置シャッフル</button>
+  <button id="btnStart">開始</button>
+  <button id="btnReset">最初から</button>
+</div>
+<div id="help">
+  <b>遊び方</b>: 最初に自分の駒（下側）を2つタップして入れ替え、「開始」で対戦。駒をタップ→行き先をタップで動かします。相手の駒は伏せられていて見えません（CPUも同じ条件）。相手の駒をタップすると、これまでの動きと勝敗から絞り込んだ「正体の可能性」が出ます。<br>
+  <b>勝利</b>: 敵の軍旗を取る／相手が動かせなくなる。　<b>動き</b>: 将官・佐官・尉官・スパイは縦横1マス、騎兵・戦車は縦2マス横1マス、工兵は縦横いくらでも、飛行機は縦横いくらでも（飛び越え可）。地雷・軍旗は動けません。<br>
+  <b>強さ</b>: 大将＞中将＞(飛行機)＞少将＞(戦車)＞大佐＞…＞少尉＞騎兵＞工兵＞スパイ。同格は相打ち。スパイは大将に勝つ。地雷は工兵・飛行機以外を倒す（地雷は残る）。工兵と飛行機は地雷を除去できる。
+</div>
+<script>
+(() => {
+  const COLS = 8, ROWS = 9, CELL = 64, PAD = 16;
+  const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status'), infoEl = document.getElementById('info');
+  const btnShuffle = document.getElementById('btnShuffle'), btnStart = document.getElementById('btnStart');
+
+  const TYPES = ['大将','中将','少将','大佐','中佐','少佐','大尉','中尉','少尉','騎兵','工兵','タンク','飛行機','地雷','スパイ','軍旗'];
+  const COUNT = {大将:1,中将:1,少将:2,大佐:2,中佐:2,少佐:2,大尉:2,中尉:2,少尉:2,騎兵:2,工兵:3,タンク:3,飛行機:2,地雷:3,スパイ:1,軍旗:1}; // 計31枚
+  const POW = {大将:12,中将:11,飛行機:10.5,少将:10,タンク:9.5,大佐:9,中佐:8,少佐:7,大尉:6,中尉:5,少尉:4,騎兵:3,工兵:2,スパイ:1};
+  const VAL = Object.assign({}, POW, { スパイ:6, 工兵:5, 地雷:6, 軍旗:1000 }); // CPUの駒価値
+  const FIXED = ['地雷','軍旗'], MOBILE = ['工兵','騎兵','タンク','飛行機'];
+
+  // 攻撃側から見た結果: 1=勝ち 0=相打ち -1=負け
+  function battle(a, d) {
+    if (d === '軍旗') return 1;
+    if (d === '地雷') return (a === '工兵' || a === '飛行機') ? 1 : -1;
+    if (a === 'スパイ' && d === '大将') return 1;
+    if (a === '大将' && d === 'スパイ') return -1;
+    const x = POW[a], y = POW[d];
+    return x > y ? 1 : x < y ? -1 : 0;
+  }
+
+  let board, phase, turn, sel, setupSel, infoCell, reveal, moves;
+  const newPiece = (t, own) => ({ t, own, moved: false, cand: new Set(TYPES) }); // cand = 相手側が考える正体の候補
+
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const deck = () => { const d = []; for (const t of TYPES) for (let k = 0; k < COUNT[t]; k++) d.push(t); return d; };
+
+  function setupPlayer() {
+    for (let i = 40; i < 72; i++) board[i] = null;
+    const cells = shuffle([...Array(32).keys()].map(k => 40 + k)); cells.pop(); // 1マスは空き
+    deck().sort(() => Math.random() - .5).forEach((t, k) => board[cells[k]] = newPiece(t, 'P'));
+  }
+  function setupCpu() {
+    for (let i = 0; i < 32; i++) board[i] = null;
+    const free = new Set([...Array(32).keys()]); free.delete(16 + Math.floor(Math.random() * 16)); // 空きマス
+    const take = i => { free.delete(i); return i; };
+    const fx = Math.floor(Math.random() * COLS); // 軍旗は最後列、地雷で囲う
+    const flag = fx; board[take(flag)] = newPiece('軍旗', 'C');
+    const around = [flag - 1, flag + 1, flag + COLS].filter(i => i >= 0 && i < 32 && (i % COLS === flag % COLS || (i / COLS | 0) === 0 || i === flag + COLS) && free.has(i));
+    let mines = 3;
+    for (const i of around) if (mines > 0) { board[take(i)] = newPiece('地雷', 'C'); mines--; }
+    const rest = deck(); rest.splice(rest.indexOf('軍旗'), 1);
+    for (let k = 0; k < mines; k++) { /* 余った地雷は通常配置へ */ }
+    const placed = board.slice(0, 32).filter(Boolean).map(p => p.t);
+    for (const t of placed) { const k = rest.indexOf(t); if (k >= 0) rest.splice(k, 1); }
+    shuffle(rest);
+    [...free].forEach((i, k) => { if (rest[k]) board[i] = newPiece(rest[k], 'C'); });
+  }
+
+  function newGame() {
+    board = new Array(72).fill(null);
+    phase = 'setup'; turn = 'P'; sel = null; setupSel = null; infoCell = null; reveal = false; moves = 0;
+    setupPlayer(); setupCpu();
+    btnShuffle.hidden = btnStart.hidden = false;
+    setStatus('配置フェーズ: 自分の駒を2つタップして入れ替え → 「開始」');
+    infoEl.textContent = ''; draw();
+  }
+
+  // ---- 駒の動き ----
+  function dests(bd, i) {
+    const p = bd[i];
+    if (!p || FIXED.includes(p.t)) return [];
+    const x = i % COLS, y = (i / COLS) | 0, out = [];
+    const slide = (dx, dy, max, jump) => {
+      for (let k = 1; k <= max; k++) {
+        const nx = x + dx * k, ny = y + dy * k;
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) break;
+        const q = bd[ny * COLS + nx];
+        if (!q) { out.push(ny * COLS + nx); continue; }
+        if (q.own !== p.own) out.push(ny * COLS + nx);
+        if (!jump) break;
+      }
+    };
+    const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+    for (const [dx, dy] of dirs) {
+      if (p.t === '工兵') slide(dx, dy, 8, false);
+      else if (p.t === '飛行機') slide(dx, dy, 8, true);
+      else if (p.t === '騎兵' || p.t === 'タンク') slide(dx, dy, dx === 0 ? 2 : 1, false);
+      else slide(dx, dy, 1, false);
+    }
+    return out;
+  }
+  const hasMove = own => board.some((p, i) => p && p.own === own && dests(board, i).length);
+
+  // 実行して結果を返す: 'move' | 'flag' | 'win' | 'lose' | 'draw'（攻撃側から見た結果）
+  function doMove(i, j) {
+    const a = board[i], d = board[j];
+    const dist = Math.abs((j % COLS) - (i % COLS)) + Math.abs(((j / COLS) | 0) - ((i / COLS) | 0));
+    a.moved = true;
+    a.cand = new Set([...a.cand].filter(t => !FIXED.includes(t) && (dist === 1 || MOBILE.includes(t))));
+    if (!d) { board[j] = a; board[i] = null; return 'move'; }
+    if (d.t === '軍旗') { board[j] = a; board[i] = null; return 'flag'; }
+    const r = battle(a.t, d.t);
+    d.cand = new Set([...d.cand].filter(t => battle(a.t, t) === r));
+    a.cand = new Set([...a.cand].filter(t => battle(t, d.t) === r));
+    if (r === 1) { board[j] = a; board[i] = null; }
+    else if (r === -1) board[i] = null;
+    else { board[i] = null; board[j] = null; }
+    return r === 1 ? 'win' : r === -1 ? 'lose' : 'draw';
+  }
+
+  function afterMove(res, mover) {
+    moves++;
+    const me = mover === 'P';
+    let msg = '';
+    if (res === 'win') msg = me ? '攻撃: 勝ち！' : 'CPUが攻撃: あなたの駒は負け…';
+    else if (res === 'lose') msg = me ? '攻撃: 負け…' : 'CPUが攻撃: あなたの駒が勝ち！';
+    else if (res === 'draw') msg = me ? '攻撃: 相打ち' : 'CPUが攻撃: 相打ち';
+    sel = null;
+    if (res === 'flag') return finish(me ? 'あなたの勝ち！ 敵の軍旗を取りました 🎉' : 'CPUの勝ち… 軍旗を取られました');
+    const next = me ? 'C' : 'P';
+    if (!hasMove(next)) return finish(me ? 'あなたの勝ち！ 相手は動かせる駒がありません 🎉' : 'CPUの勝ち… あなたは動かせる駒がありません');
+    if (moves >= 400) return finish('引き分け（手数が多すぎました）');
+    turn = next;
+    setStatus((msg ? msg + '　' : '') + (turn === 'P' ? 'あなたの番' : 'CPUが考えています…'));
+    draw();
+    if (turn === 'C') setTimeout(cpuMove, 650);
+  }
+  function finish(text) {
+    phase = 'over'; reveal = true; setStatus(text + '　（全駒を公開）');
+    btnShuffle.hidden = btnStart.hidden = true; draw();
+  }
+
+  // ---- CPU（人間の駒の正体は「候補」しか知らない） ----
+  function cpuMove() {
+    if (phase !== 'play' || turn !== 'C') return;
+    let best = null, bs = -1e9;
+    board.forEach((a, i) => {
+      if (!a || a.own !== 'C') return;
+      for (const j of dests(board, i)) {
+        const d = board[j];
+        let s = Math.random() * 0.6;
+        if (d) {
+          let tot = 0, e = 0;
+          for (const t of d.cand) {
+            const w = COUNT[t]; tot += w;
+            if (t === '軍旗') { e += w * 1000; continue; }
+            const r = battle(a.t, t);
+            e += w * (r === 1 ? VAL[t] : r === -1 ? -VAL[a.t] : VAL[t] - VAL[a.t]);
+          }
+          s += tot ? e / tot : 0;
+        } else {
+          s += (((j / COLS) | 0) - ((i / COLS) | 0)) * 0.4; // 前進（下方向）を少し好む
+          const x = j % COLS, y = (j / COLS) | 0;
+          for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+            const q = board[ny * COLS + nx];
+            if (!q || q.own !== 'P') continue;
+            let tot = 0, danger = 0;
+            for (const t of q.cand) { const w = COUNT[t]; tot += w; if (!FIXED.includes(t) && battle(t, a.t) === 1) danger += w; }
+            s -= tot ? (danger / tot) * VAL[a.t] * 0.6 : 0;
+          }
+        }
+        if (s > bs) { bs = s; best = [i, j]; }
+      }
+    });
+    if (!best) return finish('あなたの勝ち！ 相手は動かせる駒がありません 🎉');
+    afterMove(doMove(best[0], best[1]), 'C');
+  }
+
+  // ---- 入力 ----
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (phase === 'over') return;
+    const r = canvas.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - r.left) * canvas.width / r.width - PAD) / CELL);
+    const y = Math.floor(((e.clientY - r.top) * canvas.height / r.height - PAD) / CELL);
+    if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+    const i = y * COLS + x, p = board[i];
+    if (phase === 'setup') {
+      if (i < 40) return;
+      if (setupSel === null) { if (p) setupSel = i; }
+      else { [board[setupSel], board[i]] = [board[i], board[setupSel]]; setupSel = null; }
+      draw(); return;
+    }
+    if (turn !== 'P') return;
+    if (sel !== null && dests(board, sel).includes(i)) { infoCell = null; infoEl.textContent = ''; afterMove(doMove(sel, i), 'P'); return; }
+    if (p && p.own === 'P') { sel = i; infoCell = null; infoEl.textContent = ''; }
+    else if (p) { sel = null; infoCell = i; infoEl.textContent = 'この駒の可能性: ' + TYPES.filter(t => p.cand.has(t)).join('・'); }
+    else sel = null;
+    draw();
+  });
+  btnShuffle.addEventListener('click', () => { if (phase === 'setup') { setupPlayer(); setupSel = null; draw(); } });
+  btnStart.addEventListener('click', () => {
+    if (phase !== 'setup') return;
+    phase = 'play'; setupSel = null; btnShuffle.hidden = btnStart.hidden = true;
+    setStatus('あなたの番（先手）'); draw();
+  });
+  document.getElementById('btnReset').addEventListener('click', newGame);
+
+  const setStatus = t => { statusEl.textContent = t; };
+
+  // ---- 描画 ----
+  function draw() {
+    ctx.fillStyle = '#b98b4a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(PAD, PAD + 4 * CELL, COLS * CELL, CELL); // 中立帯
+    ctx.strokeStyle = 'rgba(60,35,10,.7)'; ctx.lineWidth = 1.5;
+    for (let i = 0; i <= COLS; i++) { ctx.beginPath(); ctx.moveTo(PAD + i * CELL, PAD); ctx.lineTo(PAD + i * CELL, PAD + ROWS * CELL); ctx.stroke(); }
+    for (let i = 0; i <= ROWS; i++) { ctx.beginPath(); ctx.moveTo(PAD, PAD + i * CELL); ctx.lineTo(PAD + COLS * CELL, PAD + i * CELL); ctx.stroke(); }
+    const legal = sel !== null ? dests(board, sel) : [];
+    board.forEach((p, i) => {
+      const x = PAD + (i % COLS) * CELL, y = PAD + ((i / COLS) | 0) * CELL;
+      if (!p) return;
+      const mine = p.own === 'P', show = mine || reveal;
+      ctx.fillStyle = mine ? '#efe3c6' : (reveal ? '#c98c8c' : '#3a4661');
+      rr(x + 5, y + 5, CELL - 10, CELL - 10, 8); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = mine || reveal ? '#222' : '#93a0b8';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (show) { ctx.font = (p.t.length >= 3 ? 17 : 25) + 'px "Yu Gothic UI","Noto Sans JP",sans-serif'; ctx.fillText(p.t, x + CELL / 2, y + CELL / 2); }
+      else { ctx.font = '22px sans-serif'; ctx.fillText('？', x + CELL / 2, y + CELL / 2); if (p.moved) { ctx.fillStyle = '#ffd54a'; ctx.beginPath(); ctx.arc(x + CELL - 12, y + 12, 4, 0, 7); ctx.fill(); } }
+    });
+    const mark = (i, color, w) => { ctx.strokeStyle = color; ctx.lineWidth = w; rr(PAD + (i % COLS) * CELL + 3, PAD + ((i / COLS) | 0) * CELL + 3, CELL - 6, CELL - 6, 9); ctx.stroke(); };
+    if (sel !== null) mark(sel, '#ffd54a', 4);
+    if (setupSel !== null) mark(setupSel, '#ffd54a', 4);
+    if (infoCell !== null) mark(infoCell, '#4ad7ff', 3);
+    for (const j of legal) {
+      const cx = PAD + (j % COLS) * CELL + CELL / 2, cy = PAD + ((j / COLS) | 0) * CELL + CELL / 2;
+      ctx.beginPath(); ctx.arc(cx, cy, board[j] ? 26 : 7, 0, 7);
+      if (board[j]) { ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 4; ctx.stroke(); } else { ctx.fillStyle = 'rgba(255,213,74,.85)'; ctx.fill(); }
+    }
+  }
+  function rr(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  newGame();
+})();
+</script>
+</body>
+</html>

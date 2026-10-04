@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>チェス</title>
+<style>
+  :root { --bg:#1a1f2b; --panel:#232a3a; --text:#e8ecf4; --dim:#93a0b8; --accent:#ffd54a; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:12px;
+    padding:20px 12px; background:var(--bg); color:var(--text);
+    font-family:"Segoe UI","Yu Gothic UI","Noto Sans JP",sans-serif; }
+  h1 { margin:0; font-size:26px; letter-spacing:4px; }
+  #status { background:var(--panel); padding:10px 18px; border-radius:12px; font-size:16px;
+    width:min(512px,100%); text-align:center; color:var(--accent); }
+  #status.check { color:#ff7a6e; }
+  canvas { width:min(512px,100%); height:auto; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.45);
+    touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+  #controls, #promoBar { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+  button { background:var(--panel); color:var(--text); border:1px solid #3a4661; border-radius:8px;
+    padding:10px 18px; font-size:14px; cursor:pointer; font-family:inherit; touch-action:manipulation; }
+  button:hover { border-color:var(--accent); }
+  button.selected { background:var(--accent); color:#1a1f2b; border-color:var(--accent); font-weight:600; }
+  #promoBar button { border-color:#4ad7ff; color:#4ad7ff; font-size:26px; padding:4px 18px; }
+  #help { font-size:12.5px; color:var(--dim); line-height:1.8; width:min(512px,100%); text-align:center; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<h1>チェス</h1>
+<div id="status"></div>
+<canvas id="board" width="512" height="512"></canvas>
+<div id="promoBar" hidden>
+  <button data-p="q">♕</button><button data-p="r">♖</button><button data-p="b">♗</button><button data-p="n">♘</button>
+</div>
+<div id="controls">
+  <button id="btnCpu" class="selected">CPU対戦</button>
+  <button id="btn2p">2人プレイ</button>
+  <button id="btnReset">リセット</button>
+</div>
+<div id="help">
+  駒をタップ→行き先をタップ。あなたは白（下側）、CPUは黒です。<br>
+  キャスリング・アンパッサン・プロモーション（成る駒を選択）に対応。ステイルメイト・50手ルール・駒不足は引き分け。
+</div>
+<script>
+(() => {
+  const CELL = 64;
+  const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
+  const statusEl = document.getElementById('status'), promoBar = document.getElementById('promoBar');
+  const btnCpu = document.getElementById('btnCpu'), btn2p = document.getElementById('btn2p');
+  const DEPTH = 3; // CPUの先読み手数（4にすると強くなるが数秒かかることがある）
+
+  const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR';
+  const VAL = { p:100, n:320, b:330, r:500, q:900, k:0 };
+  const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+  const KN = [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]];
+  const KG = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+  const isW = ch => ch !== '.' && ch < 'a';
+  const inb = (x, y) => x >= 0 && x < 8 && y >= 0 && y < 8;
+
+  function initState() {
+    const b = [];
+    for (const row of START.split('/')) for (const c of row) { if (c >= '1' && c <= '8') for (let k = 0; k < +c; k++) b.push('.'); else b.push(c); }
+    return { b, t: 'w', c: 'KQkq', ep: -1, hm: 0 };
+  }
+
+  function attacked(b, sq, byW) {
+    const r = sq >> 3, f = sq & 7;
+    const P = byW ? 'P' : 'p', N = byW ? 'N' : 'n', K = byW ? 'K' : 'k', B = byW ? 'B' : 'b', R = byW ? 'R' : 'r', Q = byW ? 'Q' : 'q';
+    const pr = r + (byW ? 1 : -1);
+    if (pr >= 0 && pr < 8) for (const df of [-1, 1]) if (f + df >= 0 && f + df < 8 && b[pr*8 + f + df] === P) return true;
+    for (const [dx, dy] of KN) if (inb(f+dx, r+dy) && b[(r+dy)*8 + f+dx] === N) return true;
+    for (const [dx, dy] of KG) {
+      if (inb(f+dx, r+dy) && b[(r+dy)*8 + f+dx] === K) return true;
+      const diag = dx && dy;
+      let x = f + dx, y = r + dy;
+      while (inb(x, y)) {
+        const c = b[y*8 + x];
+        if (c !== '.') { if (c === Q || c === (diag ? B : R)) return true; break; }
+        x += dx; y += dy;
+      }
+    }
+    return false;
+  }
+
+  function gen(s) {
+    const b = s.b, white = s.t === 'w', out = [];
+    const add = (f, t, p, x) => out.push({ f, t, p, x });
+    for (let i = 0; i < 64; i++) {
+      const ch = b[i];
+      if (ch === '.' || isW(ch) !== white) continue;
+      const k = ch.toLowerCase(), r = i >> 3, f = i & 7;
+      const target = to => b[to] === '.' || isW(b[to]) !== white;
+      if (k === 'p') {
+        const d = white ? -1 : 1, start = white ? 6 : 1, last = white ? 0 : 7, one = i + d * 8;
+        const push = to => { if ((to >> 3) === last) for (const p of 'qrbn') add(i, to, p); else add(i, to); };
+        if (b[one] === '.') { push(one); if (r === start && b[one + d*8] === '.') add(i, one + d*8); }
+        for (const df of [-1, 1]) {
+          if (f + df < 0 || f + df > 7) continue;
+          const to = one + df;
+          if (b[to] !== '.' && isW(b[to]) !== white) push(to);
+          else if (to === s.ep) add(i, to, undefined, 'ep');
+        }
+      } else if (k === 'n' || k === 'k') {
+        for (const [dx, dy] of (k === 'n' ? KN : KG)) if (inb(f+dx, r+dy) && target((r+dy)*8 + f+dx)) add(i, (r+dy)*8 + f+dx);
+        if (k === 'k') {
+          const home = white ? 60 : 4;
+          if (i === home && !attacked(b, home, !white)) {
+            const rk = white ? 'R' : 'r';
+            if (s.c.includes(white ? 'K' : 'k') && b[home+1] === '.' && b[home+2] === '.' && b[home+3] === rk &&
+                !attacked(b, home+1, !white) && !attacked(b, home+2, !white)) add(i, home+2, undefined, 'ck');
+            if (s.c.includes(white ? 'Q' : 'q') && b[home-1] === '.' && b[home-2] === '.' && b[home-3] === '.' && b[home-4] === rk &&
+                !attacked(b, home-1, !white) && !attacked(b, home-2, !white)) add(i, home-2, undefined, 'cq');
+          }
+        }
+      } else {
+        const dirs = k === 'r' ? KG.slice(0, 4) : k === 'b' ? KG.slice(4) : KG;
+        for (const [dx, dy] of dirs) {
+          let x = f + dx, y = r + dy;
+          while (inb(x, y)) {
+            const to = y*8 + x;
+            if (b[to] === '.') add(i, to);
+            else { if (isW(b[to]) !== white) add(i, to); break; }
+            x += dx; y += dy;
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  function apply(s, m) {
+    const b = s.b.slice(), ch = b[m.f], white = isW(ch), cap = b[m.t];
+    b[m.t] = m.p ? (white ? m.p.toUpperCase() : m.p) : ch; b[m.f] = '.';
+    if (m.x === 'ep') b[m.t + (white ? 8 : -8)] = '.';
+    if (m.x === 'ck') { b[m.t - 1] = b[m.t + 1]; b[m.t + 1] = '.'; }
+    if (m.x === 'cq') { b[m.t + 1] = b[m.t - 2]; b[m.t - 2] = '.'; }
+    let c = s.c;
+    const strip = x => { c = c.replace(x, ''); };
+    if (ch === 'K') { strip('K'); strip('Q'); }
+    if (ch === 'k') { strip('k'); strip('q'); }
+    for (const sq of [m.f, m.t]) { if (sq === 63) strip('K'); if (sq === 56) strip('Q'); if (sq === 7) strip('k'); if (sq === 0) strip('q'); }
+    const ep = (ch.toLowerCase() === 'p' && Math.abs(m.t - m.f) === 16) ? (m.f + m.t) / 2 : -1;
+    const reset = cap !== '.' || ch.toLowerCase() === 'p';
+    return { b, t: white ? 'b' : 'w', c, ep, hm: reset ? 0 : s.hm + 1 };
+  }
+
+  const kingSq = (b, white) => b.indexOf(white ? 'K' : 'k');
+  const inCheck = (s, white) => attacked(s.b, kingSq(s.b, white), !white);
+  const legal = s => gen(s).filter(m => !inCheck(apply(s, m), s.t === 'w'));
+
+  function insufficient(b) {
+    const rest = b.filter(c => c !== '.' && c !== 'K' && c !== 'k');
+    return rest.length === 0 || (rest.length === 1 && 'nb'.includes(rest[0].toLowerCase()));
+  }
+
+  // ---- CPU ----
+  function evalW(s) {
+    let v = 0;
+    for (let i = 0; i < 64; i++) {
+      const ch = s.b[i]; if (ch === '.') continue;
+      const k = ch.toLowerCase(), w = isW(ch), r = i >> 3, f = i & 7;
+      let x = VAL[k];
+      const cd = Math.min(f, 7 - f) + Math.min(r, 7 - r);
+      if (k === 'n' || k === 'b') x += cd * 8;
+      if (k === 'p') x += (w ? 6 - r : r - 1) * 8 + (cd >= 4 ? 6 : 0);
+      v += w ? x : -x;
+    }
+    return v;
+  }
+  function search(s, d, a, bt, ply) {
+    const mv = legal(s);
+    if (!mv.length) return inCheck(s, s.t === 'w') ? -30000 + ply : 0;
+    if (d === 0) return s.t === 'w' ? evalW(s) : -evalW(s);
+    const sc = m => (s.b[m.t] !== '.' ? VAL[s.b[m.t].toLowerCase()] * 10 - VAL[s.b[m.f].toLowerCase()] : 0) + (m.p ? 800 : 0);
+    mv.sort((x, y) => sc(y) - sc(x));
+    for (const m of mv) {
+      const v = -search(apply(s, m), d - 1, -bt, -a, ply + 1);
+      if (v >= bt) return v;
+      if (v > a) a = v;
+    }
+    return a;
+  }
+  function cpuMove() {
+    if (over || mode !== 'cpu' || S.t !== 'b') return;
+    let best = null, bs = -1e9;
+    for (const m of legal(S)) {
+      const v = -search(apply(S, m), DEPTH - 1, -1e9, 1e9, 1) + Math.random() * 4;
+      if (v > bs) { bs = v; best = m; }
+    }
+    if (best) play(best);
+  }
+
+  // ---- ゲーム進行 ----
+  let S, sel, targets, last, mode = 'cpu', over, pending, timer;
+  function newGame() {
+    clearTimeout(timer);
+    S = initState(); sel = null; targets = []; last = null; over = false; pending = null;
+    promoBar.hidden = true; update(); 
+  }
+  function play(m) {
+    S = apply(S, m); last = m; sel = null; targets = []; pending = null; promoBar.hidden = true;
+    update();
+    if (!over && mode === 'cpu' && S.t === 'b') timer = setTimeout(cpuMove, 350);
+  }
+  function update() {
+    const white = S.t === 'w', chk = inCheck(S, white), n = legal(S).length;
+    statusEl.classList.toggle('check', false);
+    if (!n) {
+      over = true;
+      if (chk) statusEl.textContent = 'チェックメイト！ ' + (white ? '黒' : '白') + 'の勝ち' + (mode === 'cpu' ? (white ? '（CPUの勝ち…）' : '（あなたの勝ち！ 🎉）') : '');
+      else statusEl.textContent = 'ステイルメイト（引き分け）';
+    } else if (S.hm >= 100) { over = true; statusEl.textContent = '50手ルールで引き分け'; }
+    else if (insufficient(S.b)) { over = true; statusEl.textContent = '駒不足で引き分け'; }
+    else {
+      const who = mode === 'cpu' ? (white ? 'あなたの番' : 'CPUが考えています…') : (white ? '白の番' : '黒の番');
+      statusEl.textContent = who + (chk ? '　王手！' : '');
+      statusEl.classList.toggle('check', chk);
+    }
+    draw();
+  }
+
+  // ---- 入力 ----
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (over || pending || (mode === 'cpu' && S.t === 'b')) return;
+    const r = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) * canvas.width / r.width / CELL);
+    const y = Math.floor((e.clientY - r.top) * canvas.height / r.height / CELL);
+    if (!inb(x, y)) return;
+    const i = y * 8 + x;
+    if (sel !== null) {
+      const ms = targets.filter(m => m.t === i);
+      if (ms.length > 1) { pending = ms; promoBar.hidden = false; draw(); return; }
+      if (ms.length === 1) { play(ms[0]); return; }
+    }
+    const ch = S.b[i];
+    if (ch !== '.' && isW(ch) === (S.t === 'w')) { sel = i; targets = legal(S).filter(m => m.f === i); }
+    else { sel = null; targets = []; }
+    draw();
+  });
+  promoBar.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+    const m = pending && pending.find(x => x.p === btn.dataset.p);
+    if (m) play(m);
+  }));
+  document.getElementById('btnReset').addEventListener('click', newGame);
+  btnCpu.addEventListener('click', () => { mode = 'cpu'; btnCpu.classList.add('selected'); btn2p.classList.remove('selected'); newGame(); });
+  btn2p.addEventListener('click', () => { mode = '2p'; btn2p.classList.add('selected'); btnCpu.classList.remove('selected'); newGame(); });
+
+  // ---- 描画 ----
+  function draw() {
+    for (let i = 0; i < 64; i++) {
+      const x = (i & 7) * CELL, y = (i >> 3) * CELL;
+      ctx.fillStyle = ((i & 7) + (i >> 3)) % 2 ? '#b58863' : '#f0d9b5';
+      ctx.fillRect(x, y, CELL, CELL);
+      if (last && (i === last.f || i === last.t)) { ctx.fillStyle = 'rgba(255,213,74,.45)'; ctx.fillRect(x, y, CELL, CELL); }
+      if (i === sel) { ctx.fillStyle = 'rgba(255,213,74,.7)'; ctx.fillRect(x, y, CELL, CELL); }
+    }
+    const kw = kingSq(S.b, S.t === 'w');
+    if (kw >= 0 && inCheck(S, S.t === 'w')) { ctx.fillStyle = 'rgba(255,60,50,.55)'; ctx.fillRect((kw & 7) * CELL, (kw >> 3) * CELL, CELL, CELL); }
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    for (let k = 0; k < 8; k++) {
+      ctx.fillStyle = (k + 7) % 2 ? '#b58863' : '#f0d9b5'; ctx.fillText(String(8 - k), 3, k * CELL + 3);
+      ctx.fillStyle = (k + 7) % 2 ? '#f0d9b5' : '#b58863'; ctx.fillText('abcdefgh'[k], k * CELL + CELL - 9, 7 * CELL + CELL - 13);
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '46px "Segoe UI Symbol","Noto Sans Symbols 2","Apple Symbols",sans-serif';
+    for (let i = 0; i < 64; i++) {
+      const ch = S.b[i]; if (ch === '.') continue;
+      const cx = (i & 7) * CELL + CELL / 2, cy = (i >> 3) * CELL + CELL / 2 + 2, g = GLYPH[ch.toLowerCase()] + '\uFE0E';
+      ctx.lineWidth = 3; ctx.lineJoin = 'round';
+      if (isW(ch)) { ctx.strokeStyle = '#222'; ctx.strokeText(g, cx, cy); ctx.fillStyle = '#fff'; }
+      else { ctx.strokeStyle = '#eee'; ctx.strokeText(g, cx, cy); ctx.fillStyle = '#111'; }
+      ctx.fillText(g, cx, cy);
+    }
+    for (const m of targets) {
+      const cx = (m.t & 7) * CELL + CELL / 2, cy = (m.t >> 3) * CELL + CELL / 2;
+      ctx.beginPath();
+      if (S.b[m.t] !== '.' || m.x === 'ep') { ctx.arc(cx, cy, 28, 0, 7); ctx.strokeStyle = 'rgba(220,40,30,.85)'; ctx.lineWidth = 5; ctx.stroke(); }
+      else { ctx.arc(cx, cy, 9, 0, 7); ctx.fillStyle = 'rgba(30,110,50,.6)'; ctx.fill(); }
+    }
+  }
+
+  newGame();
+})();
+</script>
+</body>
+</html>
