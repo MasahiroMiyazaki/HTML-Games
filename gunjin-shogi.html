@@ -4,272 +4,816 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>軍人将棋</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#1a1f2b; --panel:#232a3a; --text:#e8ecf4; --dim:#93a0b8; --accent:#ffd54a; }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:12px;
-    padding:20px 12px; background:var(--bg); color:var(--text);
-    font-family:"Segoe UI","Yu Gothic UI","Noto Sans JP",sans-serif; }
-  h1 { margin:0; font-size:26px; letter-spacing:4px; }
-  #status { background:var(--panel); padding:10px 18px; border-radius:12px; font-size:16px;
-    width:min(544px,100%); text-align:center; color:var(--accent); }
-  #info { font-size:13px; color:var(--dim); width:min(544px,100%); text-align:center; min-height:20px; }
-  canvas { width:min(544px,100%); height:auto; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.45);
+  :root {
+    --desk:#232d28; --desk-hi:#34423b;
+    --slip:#efe6c6; --slip-edge:#b9ab7c;
+    --ink:#241d14; --cream:#efe7cc; --dim:#a9b3a6;
+    --vermilion:#b93a24; --vermilion-deep:#7d2414; --gold:#e8b53a;
+    --serif:"Shippori Mincho B1","Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif;
+    --sans:"Zen Kaku Gothic New","Yu Gothic UI","Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    margin:0; min-height:100vh; padding:22px 12px 40px;
+    padding-top:max(22px, env(safe-area-inset-top)); padding-bottom:max(40px, env(safe-area-inset-bottom));
+    background:radial-gradient(ellipse at 50% -10%, var(--desk-hi) 0%, var(--desk) 62%);
+    color:var(--cream); font-family:var(--sans); line-height:1.7;
+  }
+  main { width:min(600px,100%); margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+  h1 { margin:0 0 2px; font-family:var(--serif); font-weight:800; font-size:34px; letter-spacing:.32em; text-indent:.32em; text-align:center; color:var(--cream); }
+  .slip { background:var(--slip); color:var(--ink); border-left:6px solid var(--vermilion); border-radius:4px;
+    padding:10px 16px; font-weight:700; font-size:15.5px; min-height:76px; line-height:1.55; display:flex; align-items:center; box-shadow:0 2px 0 var(--slip-edge); }
+  canvas { display:block; width:100%; height:auto; border-radius:14px; box-shadow:0 14px 34px rgba(0,0,0,.5);
     touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+  #info { min-height:24px; font-size:13.5px; color:var(--dim); text-align:center; }
+  #tally { display:flex; justify-content:space-between; gap:12px; font-size:13.5px; color:var(--dim); padding:0 4px; }
+  #tally b { color:var(--cream); font-size:15px; }
   #controls { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
-  button { background:var(--panel); color:var(--text); border:1px solid #3a4661; border-radius:8px;
-    padding:10px 18px; font-size:14px; cursor:pointer; font-family:inherit; touch-action:manipulation; }
-  button:hover { border-color:var(--accent); }
-  #help { font-size:12.5px; color:var(--dim); line-height:1.8; width:min(544px,100%); }
+  .btn { background:var(--slip); color:var(--ink); border:0; border-bottom:3px solid var(--slip-edge); border-radius:6px;
+    padding:9px 16px; font:700 14px var(--sans); cursor:pointer; touch-action:manipulation; }
+  .btn:hover { background:#f6eed2; }
+  .btn:active { transform:translateY(1px); border-bottom-width:2px; }
+  .btn.primary { background:var(--vermilion); color:#fff3df; border-bottom-color:var(--vermilion-deep); }
+  .btn.primary:hover { background:#c9442c; }
+  .btn:focus-visible, summary:focus-visible { outline:3px solid var(--gold); outline-offset:2px; }
+  #modeSel { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; align-items:center; }
+  #modeSel .modeLabel { font-size:13px; color:var(--dim); margin-right:4px; }
+  #modeSel label { position:relative; cursor:pointer; }
+  #modeSel input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+  #modeSel label span { display:block; padding:6px 12px; border-radius:6px; font-size:13px; font-weight:700; background:rgba(0,0,0,.22); color:var(--cream); border:1px solid rgba(239,231,204,.18); }
+  #modeSel input:checked + span { background:var(--slip); color:var(--ink); border-color:var(--slip-edge); }
+  #modeSel input:focus-visible + span { outline:3px solid var(--gold); outline-offset:2px; }
+  #log { background:rgba(0,0,0,.2); border-radius:8px; padding:8px 14px; font-size:13px; color:var(--dim); min-height:46px; }
+  #log div:first-child { color:var(--cream); font-weight:700; }
+  #log:empty::before { content:"戦闘の記録はここに出ます"; }
+  details { background:rgba(0,0,0,.16); border-radius:8px; padding:4px 14px; font-size:13.5px; }
+  summary { cursor:pointer; padding:8px 0; font-weight:700; color:var(--cream); }
+  details p, details ul { margin:6px 0; color:#d6d9c8; }
+  details ul { padding-left:1.2em; }
+  details li { margin:5px 0; }
+  table { width:100%; border-collapse:collapse; margin:10px 0 8px; font-size:13px; }
+  th, td { text-align:left; padding:5px 6px; border-bottom:1px solid rgba(239,231,204,.14); vertical-align:top; }
+  th { color:var(--cream); font-weight:700; }
+  td:first-child { font-family:var(--serif); font-weight:800; white-space:nowrap; color:var(--cream); }
+  td:nth-child(2) { white-space:nowrap; text-align:center; }
+  .matrix-wrap { overflow-x:auto; margin:6px 0; }
+  #matrix { width:auto; min-width:100%; font-size:12px; text-align:center; }
+  #matrix th, #matrix td { padding:3px 2px; text-align:center; min-width:22px; border:1px solid rgba(239,231,204,.12); white-space:nowrap; }
+  #matrix thead th { writing-mode:vertical-rl; font-family:var(--serif); font-weight:800; height:3.6em; vertical-align:bottom; }
+  #matrix tbody th { font-family:var(--serif); font-weight:800; text-align:left; padding:3px 6px; }
+  #matrix td.w { color:#f3d36b; } #matrix td.l { color:#8e9a8f; } #matrix td.d { color:#b9c9d0; }
   [hidden] { display:none !important; }
+  @media (prefers-reduced-motion: reduce) { .btn:active { transform:none; } }
 </style>
 </head>
 <body>
-<h1>軍人将棋</h1>
-<div id="status"></div>
-<canvas id="board" width="544" height="608"></canvas>
-<div id="info"></div>
-<div id="controls">
-  <button id="btnShuffle">配置シャッフル</button>
-  <button id="btnStart">開始</button>
-  <button id="btnReset">最初から</button>
-</div>
-<div id="help">
-  <b>遊び方</b>: 最初に自分の駒（下側）を2つタップして入れ替え、「開始」で対戦。駒をタップ→行き先をタップで動かします。相手の駒は伏せられていて見えません（CPUも同じ条件）。相手の駒をタップすると、これまでの動きと勝敗から絞り込んだ「正体の可能性」が出ます。<br>
-  <b>勝利</b>: 敵の軍旗を取る／相手が動かせなくなる。　<b>動き</b>: 将官・佐官・尉官・スパイは縦横1マス、騎兵・戦車は縦2マス横1マス、工兵は縦横いくらでも、飛行機は縦横いくらでも（飛び越え可）。地雷・軍旗は動けません。<br>
-  <b>強さ</b>: 大将＞中将＞(飛行機)＞少将＞(戦車)＞大佐＞…＞少尉＞騎兵＞工兵＞スパイ。同格は相打ち。スパイは大将に勝つ。地雷は工兵・飛行機以外を倒す（地雷は残る）。工兵と飛行機は地雷を除去できる。
-</div>
+<main>
+  <h1>軍人将棋</h1>
+  <div id="status" class="slip" role="status" aria-live="polite"></div>
+  <canvas id="board" role="img" aria-label="軍人将棋の盤面。河をはさんで上が敵陣、下が自陣"></canvas>
+  <div id="info" aria-live="polite"></div>
+  <div id="tally"></div>
+  <div id="modeSel" role="radiogroup" aria-label="公開ルール">
+    <span class="modeLabel">公開ルール</span>
+    <label><input type="radio" name="mode" value="original" checked><span>原ルール</span></label>
+    <label><input type="radio" name="mode" value="attacker"><span>攻撃者のみ判明</span></label>
+    <label><input type="radio" name="mode" value="debug"><span>全公開（デバッグ）</span></label>
+  </div>
+  <div id="controls">
+    <button class="btn" id="btnShuffle">配置シャッフル</button>
+    <button class="btn" id="btnSave">配置を保存</button>
+    <button class="btn" id="btnLoad">保存した配置を読込</button>
+    <button class="btn primary" id="btnStart">開始</button>
+    <button class="btn" id="btnReset">最初から</button>
+  </div>
+  <div id="log" aria-label="戦闘の記録"></div>
+  <details>
+    <summary>ルールと駒の一覧</summary>
+    <ul>
+      <li><b>勝ち方</b>：大将〜少佐のどれかで、敵の総司令部（青い横長のマス。駒は1枚だけ置けます）を占領する。または、相手が大将〜少佐の6枚をすべて失って降伏する。動かせる駒がなくなった側も負けです。大将が倒れても、それだけでは負けません。大将〜少佐以外の駒は、敵の総司令部に入れません。</li>
+      <li><b>河</b>：河の「突入口」2か所からしか渡れません。突入口のマスには駒が止まれます。飛行機以外は、突入口に入る動きも、突入口から出る動きも1マスずつです（タンクや騎兵でも、一気に河を抜けられません）。飛行機だけは、縦に河も、味方や敵の駒も飛び越えて敵陣に入れます（水の上や味方の駒の上には止まれません）。飛行機の横の動きは、隣の1マスだけです。</li>
+      <li><b>ぶつかったとき</b>：下の勝負表のとおり、強い駒が残り、同じ駒どうしは相打ちです。相手の駒は裏向きのままなので、わかるのは勝ち負けだけです。</li>
+      <li><b>特別な駒</b>：スパイは大将にだけ勝ちます。地雷は工兵と飛行機以外に勝ちますが、触れた駒といっしょに爆発して消えます。軍旗は、真後ろにいる自軍の駒と同じ強さで戦い、後ろに駒がなければ誰にでも負けます。</li>
+      <li><b>引き分け</b>：駒のぶつかり合いがないまま100手が過ぎたとき。</li>
+      <li><b>公開ルール</b>：「原ルール」は、ぶつかっても勝ち負けしか分かりません（ルールページのとおり）。「攻撃者のみ判明」は、攻撃を仕掛けた駒の正体が相手に知られます（攻撃した駒が負けて消えても同じ）。知られた自軍の駒には「見」の印が付き、CPUもその正体を前提に動きます。守られた側の正体は、勝ち負けから推理します。「全公開（デバッグ）」は、敵の駒をすべて表向きに表示します。CPUの見え方は変わりません。「攻撃者のみ判明」と「全公開」は、ルールページにはない設定です。</li>
+      <li><b>戦闘結果の表示</b>：CPUの攻撃に勝ったときは、撃破した駒の種類を表示します。負けたときは、失ったあなたの駒の種類を表示します（負けたときにCPUの駒の正体は明かされません）。結果はマスの上にも出ます。</li>
+      <li><b>直前の動き</b>：動いた先のマスは実線の枠、動く前のマスは点線の枠で示します。赤はCPU、青緑はあなたの動きです。</li>
+      <li><b>推理</b>：敵の駒をタップすると、これまでの動きと勝敗から絞り込んだ正体の候補が出ます。駒の中央の朱い点は、その駒がすでに動いたしるしです。</li>
+    </ul>
+    <table id="pieceTable"><thead><tr><th>駒</th><th>枚数</th><th>動き</th></tr></thead><tbody></tbody></table>
+    <p><b>勝負表</b>（行の駒が、列の駒にぶつかったとき。○勝ち ×負け △相打ち）</p>
+    <div class="matrix-wrap"><table id="matrix"></table></div>
+    <p>地雷に負けた駒は消え、地雷も爆発して消えます。</p>
+  </details>
+</main>
 <script>
 (() => {
-  const COLS = 8, ROWS = 9, CELL = 64, PAD = 16;
-  const canvas = document.getElementById('board'), ctx = canvas.getContext('2d');
-  const statusEl = document.getElementById('status'), infoEl = document.getElementById('info');
-  const btnShuffle = document.getElementById('btnShuffle'), btnStart = document.getElementById('btnStart');
+  'use strict';
 
-  const TYPES = ['大将','中将','少将','大佐','中佐','少佐','大尉','中尉','少尉','騎兵','工兵','タンク','飛行機','地雷','スパイ','軍旗'];
-  const COUNT = {大将:1,中将:1,少将:2,大佐:2,中佐:2,少佐:2,大尉:2,中尉:2,少尉:2,騎兵:2,工兵:3,タンク:3,飛行機:2,地雷:3,スパイ:1,軍旗:1}; // 計31枚
-  const POW = {大将:12,中将:11,飛行機:10.5,少将:10,タンク:9.5,大佐:9,中佐:8,少佐:7,大尉:6,中尉:5,少尉:4,騎兵:3,工兵:2,スパイ:1};
-  const VAL = Object.assign({}, POW, { スパイ:6, 工兵:5, 地雷:6, 軍旗:1000 }); // CPUの駒価値
-  const FIXED = ['地雷','軍旗'], MOBILE = ['工兵','騎兵','タンク','飛行機'];
+  // ───────── 定数（盤は6列×9段：敵陣4段・河1段・自陣4段） ─────────
+  const COLS = 6, ROWS = 9, CELL = 90, PAD = 18, RIVER_ROW = 4;
+  const GATES = [1, 4];                           // 河の段で渡れるマス（突入口）の列
+  const W = PAD * 2 + COLS * CELL, H = PAD * 2 + ROWS * CELL;
+  const HQ = { P: [(ROWS - 1) * COLS + 2], C: [2] };                              // 総司令部は「2マス幅の1マス」。盤上の代表マス（駒は1枚だけ置ける）
+  const HQ_CELLS = { P: [(ROWS - 1) * COLS + 2, (ROWS - 1) * COLS + 3], C: [2, 3] };  // 見た目と経路計算用に、横に並ぶ2つの升目
+  const canon = i => i === HQ.C[0] + 1 ? HQ.C[0] : i === HQ.P[0] + 1 ? HQ.P[0] : i;  // 右半分の升目は代表マスと同じ
+  const isHQc = i => i === HQ.C[0] || i === HQ.P[0];
+  const P_LO = (RIVER_ROW + 1) * COLS, P_HI = ROWS * COLS;                    // 自陣のマス番号範囲
+  const DIRS = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  const SERIF = '"Shippori Mincho B1","Yu Mincho","Hiragino Mincho ProN","Noto Serif JP",serif';
+  const ANIM_MS = 420, QUIET_LIMIT = 100;
+  const REDUCE = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // 攻撃側から見た結果: 1=勝ち 0=相打ち -1=負け
-  function battle(a, d) {
-    if (d === '軍旗') return 1;
-    if (d === '地雷') return (a === '工兵' || a === '飛行機') ? 1 : -1;
+  const TYPES = ['大将','中将','少将','大佐','中佐','少佐','大尉','中尉','少尉','飛行機','タンク','騎兵','工兵','スパイ','地雷','軍旗'];
+  const COUNT = { 大将:1, 中将:1, 少将:1, 大佐:1, 中佐:1, 少佐:1, 大尉:2, 中尉:2, 少尉:2, 飛行機:2, タンク:2, 騎兵:1, 工兵:2, スパイ:1, 地雷:2, 軍旗:1 }; // 計23枚
+  // 勝負表から導いた強さ（地雷・スパイ・軍旗は outcome() で別扱い）
+  const POW = { 大将:12, 中将:11, 少将:10, 飛行機:9.6, タンク:9.5, 大佐:9, 中佐:8, 少佐:7, 大尉:6, 中尉:5, 少尉:4, 騎兵:3, 工兵:2, スパイ:1 };
+  const VAL = Object.assign({}, POW, { スパイ:6, 工兵:5, 地雷:4, 軍旗:4 });
+  const OFFICERS = ['大将','中将','少将','大佐','中佐','少佐'];                   // 総司令部を占領できる駒
+  const FIXED = ['地雷','軍旗'];
+  const FRONT = { タンク:5, 騎兵:4.6, 少尉:4.2, 飛行機:4, 中尉:3.8, 大尉:3.4, 工兵:3, 少佐:3, 中佐:2.4, 大佐:2, スパイ:2, 少将:1.8, 中将:1.6, 大将:1.4 };
+  const MOVE_TEXT = {
+    大将:'縦横に1マス', 中将:'縦横に1マス', 少将:'縦横に1マス', 大佐:'縦横に1マス', 中佐:'縦横に1マス', 少佐:'縦横に1マス',
+    大尉:'縦横に1マス', 中尉:'縦横に1マス', 少尉:'縦横に1マス',
+    飛行機:'縦はいくらでも、横は1マス。河も駒（味方・敵とも）も飛び越えて、直接敵陣へ入れる。地雷を除去できる',
+    タンク:'前へ2マス、後ろと横へ1マス（突入口の出入りは1マスずつ）',
+    騎兵:'前へ2マス、後ろと横へ1マス（突入口の出入りは1マスずつ）',
+    工兵:'縦横に1マス。地雷を除去できる',
+    スパイ:'縦横に1マス。大将にだけ勝つ',
+    地雷:'動けない。工兵・飛行機以外に勝つが、爆発して消える',
+    軍旗:'動けない。真後ろにいる自軍の駒と同じ強さで戦う'
+  };
+
+  // ───────── DOM ─────────
+  const $ = id => document.getElementById(id);
+  const canvas = $('board'), ctx = canvas.getContext('2d');
+  const statusEl = $('status'), infoEl = $('info'), tallyEl = $('tally'), logEl = $('log');
+  const btnShuffle = $('btnShuffle'), btnSave = $('btnSave'), btnLoad = $('btnLoad'), btnStart = $('btnStart');
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // ───────── 状態 ─────────
+  let board, phase, turn, sel, setupSel, infoCell, reveal, lastMove, quiet, anim, cpuTimer, baseStatus, noticeTimer;
+  let logs = [];
+  let flash = null;        // 直近の戦闘結果の表示 {cell, text, kind, t0}
+  const FLASH_MS = 3200;
+  const cellW = i => isHQc(i) ? CELL * 2 : CELL;
+  let mode = 'original';   // 公開ルール: original=勝敗のみ / attacker=攻撃者のみ判明 / debug=全公開
+
+  const newPiece = (t, own) => ({ t, own, moved: false, prev: -1, cand: new Set(TYPES) }); // cand = 相手側が考える正体の候補
+  const ri = n => Math.floor(Math.random() * n);
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = ri(i + 1); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const deck = () => { const d = []; for (const t of TYPES) for (let k = 0; k < COUNT[t]; k++) d.push(t); return d; };
+  const isOfficer = t => OFFICERS.includes(t);
+  // 駒の正体が見えるか（自軍の駒は常に見える）
+  const visible = p => p.own === 'P' || reveal || p.seen || mode === 'debug' || (mode === 'attacker' && p.exposed);
+  // CPUが考える人間の駒の候補（攻撃者のみ判明モードでは、攻撃した駒の正体は確定）
+  const candOf = q => (mode === 'attacker' && q.exposed) ? new Set([q.t]) : q.cand;
+  const rowOf = i => (i / COLS) | 0;
+  const isWater = i => rowOf(i) === RIVER_ROW && !GATES.includes(i % COLS);
+
+  function bfs(goals) {
+    const d = new Array(COLS * ROWS).fill(99), q = [];
+    for (const g of goals) { d[g] = 0; q.push(g); }
+    while (q.length) {
+      const i = q.shift(), x = i % COLS, y = rowOf(i);
+      for (const [dx, dy] of DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+        const j = ny * COLS + nx;
+        if (isWater(j)) continue;
+        if (d[j] > d[i] + 1) { d[j] = d[i] + 1; q.push(j); }
+      }
+    }
+    return d;
+  }
+  const DIST_TO = { P: bfs(HQ_CELLS.P), C: bfs(HQ_CELLS.C) };
+
+  // ───────── 勝負判定（勝負表どおり） ─────────
+  // 攻撃側 a が 守備側 d(実効の種類) にぶつかった結果: 1=攻撃側の勝ち 0=相打ち(両方除去) -1=攻撃側の負け
+  function outcome(a, d) {
+    if (d === null) return 1;
+    if (d === '地雷') return (a === '工兵' || a === '飛行機') ? 1 : 0;   // 地雷は勝っても爆発して消える
     if (a === 'スパイ' && d === '大将') return 1;
     if (a === '大将' && d === 'スパイ') return -1;
     const x = POW[a], y = POW[d];
     return x > y ? 1 : x < y ? -1 : 0;
   }
-
-  let board, phase, turn, sel, setupSel, infoCell, reveal, moves;
-  const newPiece = (t, own) => ({ t, own, moved: false, cand: new Set(TYPES) }); // cand = 相手側が考える正体の候補
-
-  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const deck = () => { const d = []; for (const t of TYPES) for (let k = 0; k < COUNT[t]; k++) d.push(t); return d; };
-
-  function setupPlayer() {
-    for (let i = 40; i < 72; i++) board[i] = null;
-    const cells = shuffle([...Array(32).keys()].map(k => 40 + k)); cells.pop(); // 1マスは空き
-    deck().sort(() => Math.random() - .5).forEach((t, k) => board[cells[k]] = newPiece(t, 'P'));
+  // 勝負表の表示用（地雷に負けた駒は「×」）
+  function chartCell(row, col) {
+    if (row === '地雷') return col === '地雷' ? '△' : (col === '飛行機' || col === '工兵') ? '×' : '○';
+    if (col === '地雷') return (row === '工兵' || row === '飛行機') ? '○' : '×';
+    const r = outcome(row, col); return r === 1 ? '○' : r === -1 ? '×' : '△';
   }
-  function setupCpu() {
-    for (let i = 0; i < 32; i++) board[i] = null;
-    const free = new Set([...Array(32).keys()]); free.delete(16 + Math.floor(Math.random() * 16)); // 空きマス
-    const take = i => { free.delete(i); return i; };
-    const fx = Math.floor(Math.random() * COLS); // 軍旗は最後列、地雷で囲う
-    const flag = fx; board[take(flag)] = newPiece('軍旗', 'C');
-    const around = [flag - 1, flag + 1, flag + COLS].filter(i => i >= 0 && i < 32 && (i % COLS === flag % COLS || (i / COLS | 0) === 0 || i === flag + COLS) && free.has(i));
-    let mines = 3;
-    for (const i of around) if (mines > 0) { board[take(i)] = newPiece('地雷', 'C'); mines--; }
-    const rest = deck(); rest.splice(rest.indexOf('軍旗'), 1);
-    for (let k = 0; k < mines; k++) { /* 余った地雷は通常配置へ */ }
-    const placed = board.slice(0, 32).filter(Boolean).map(p => p.t);
-    for (const t of placed) { const k = rest.indexOf(t); if (k >= 0) rest.splice(k, 1); }
-    shuffle(rest);
-    [...free].forEach((i, k) => { if (rest[k]) board[i] = newPiece(rest[k], 'C'); });
+  // 軍旗は真後ろの自軍の駒と同じ強さ。後ろに駒がなければ誰にでも負ける(null)
+  function effType(i) {
+    const p = board[i];
+    if (p.t !== '軍旗') return p.t;
+    const by = rowOf(i) - (p.own === 'P' ? -1 : 1);
+    if (by < 0 || by >= ROWS) return null;
+    const q = board[canon(by * COLS + (i % COLS))];
+    return (q && q.own === p.own && !FIXED.includes(q.t)) ? q.t : null;
   }
 
-  function newGame() {
-    board = new Array(72).fill(null);
-    phase = 'setup'; turn = 'P'; sel = null; setupSel = null; infoCell = null; reveal = false; moves = 0;
-    setupPlayer(); setupCpu();
-    btnShuffle.hidden = btnStart.hidden = false;
-    setStatus('配置フェーズ: 自分の駒を2つタップして入れ替え → 「開始」');
-    infoEl.textContent = ''; draw();
-  }
-
-  // ---- 駒の動き ----
-  function dests(bd, i) {
-    const p = bd[i];
+  // ───────── 駒の動き ─────────
+  function dests(i) {
+    const p = board[i];
     if (!p || FIXED.includes(p.t)) return [];
-    const x = i % COLS, y = (i / COLS) | 0, out = [];
-    const slide = (dx, dy, max, jump) => {
-      for (let k = 1; k <= max; k++) {
-        const nx = x + dx * k, ny = y + dy * k;
+    const y = rowOf(i), fwd = p.own === 'P' ? -1 : 1, out = new Set();
+    const flying = p.t === '飛行機', enemyHQ = HQ[p.own === 'P' ? 'C' : 'P'], atHQ = isHQc(i);
+    const slide = (x0, dx, dy, max) => {
+      let cx = x0, cy = y;
+      for (let k = 0; k < max; k++) {
+        const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) break;
-        const q = bd[ny * COLS + nx];
-        if (!q) { out.push(ny * COLS + nx); continue; }
-        if (q.own !== p.own) out.push(ny * COLS + nx);
-        if (!jump) break;
+        const j = canon(ny * COLS + nx);
+        if (isWater(j)) { if (flying && dy !== 0) { cx = nx; cy = ny; continue; } break; } // 河は突入口だけ。飛行機は縦に飛び越えられる(水の上には止まれない)
+        if (enemyHQ.includes(j) && !isOfficer(p.t)) break;                                   // 敵の総司令部は大将〜少佐のみ
+        const q = board[j];
+        if (flying && dy !== 0) { if (!q || q.own !== p.own) out.add(j); cx = nx; cy = ny; continue; } // 飛行機は縦に、味方も敵の駒も飛び越える（味方の上には止まれない）
+        if (q && q.own === p.own) break;
+        out.add(j);
+        if (q) break;
+        if (!flying && rowOf(j) === RIVER_ROW) break;                                         // 突入口に入ったら、その手はそこで終わり
+        cx = nx; cy = ny;
+        if (dy === 0 && isHQc(j)) cx = dx > 0 ? 3 : 2;                                       // 2マス幅の司令部は、反対側の端から先へ進む
       }
     };
-    const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
-    for (const [dx, dy] of dirs) {
-      if (p.t === '工兵') slide(dx, dy, 8, false);
-      else if (p.t === '飛行機') slide(dx, dy, 8, true);
-      else if (p.t === '騎兵' || p.t === 'タンク') slide(dx, dy, dx === 0 ? 2 : 1, false);
-      else slide(dx, dy, 1, false);
+    for (const [dx, dy] of DIRS) {
+      let max = 1;
+      if (p.t === '飛行機') max = dx === 0 ? 10 : 1;                                     // 飛行機：縦はいくらでも、横は隣の1マスだけ
+      else if (p.t === 'タンク' || p.t === '騎兵') max = dy === fwd ? 2 : 1;
+      if (!flying && y === RIVER_ROW) max = 1;                                                  // 突入口から出るのも1マスずつ
+      const starts = atHQ ? (dy !== 0 ? [2, 3] : [dx > 0 ? 3 : 2]) : [i % COLS];            // 司令部の駒は、前後どちらの升目にも出られる
+      for (const x0 of starts) slide(x0, dx, dy, max);
     }
-    return out;
+    return [...out];
   }
-  const hasMove = own => board.some((p, i) => p && p.own === own && dests(board, i).length);
+  const hasMove = own => board.some((p, i) => p && p.own === own && dests(i).length);
+  const officerCount = own => board.filter(p => p && p.own === own && isOfficer(p.t)).length;
 
-  // 実行して結果を返す: 'move' | 'flag' | 'win' | 'lose' | 'draw'（攻撃側から見た結果）
+  // 動いた距離（2マス幅の総司令部は、横は端から端、縦は列のずれなしとして数える）
+  function delta(i, j) {
+    let xi = i % COLS, xj = j % COLS;
+    const yi = rowOf(i), yj = rowOf(j);
+    if (yi === yj) { if (isHQc(i)) xi = xj < 2 ? 2 : 3; if (isHQc(j)) xj = xi < 2 ? 2 : 3; return [xj - xi, 0]; }
+    if (isHQc(i) || isHQc(j)) return [0, yj - yi];
+    return [xj - xi, yj - yi];
+  }
+
+  // 動き方から、その駒でありうる種類を絞る
+  function shapeOK(t, dx, dy, fwd, off) {
+    if (FIXED.includes(t)) return false;
+    if (off) return t === '飛行機';
+    if (dx !== 0) return Math.abs(dx) === 1;
+    const n = Math.abs(dy);
+    if (n === 1 || t === '飛行機') return true;
+    return n === 2 && dy === 2 * fwd && (t === '騎兵' || t === 'タンク');
+  }
+
+  // 実行して結果を返す: 'move' | 'win' | 'both' | 'lose'（攻撃側から見た結果）
   function doMove(i, j) {
     const a = board[i], d = board[j];
-    const dist = Math.abs((j % COLS) - (i % COLS)) + Math.abs(((j / COLS) | 0) - ((i / COLS) | 0));
-    a.moved = true;
-    a.cand = new Set([...a.cand].filter(t => !FIXED.includes(t) && (dist === 1 || MOBILE.includes(t))));
+    const [dx, dy] = delta(i, j), fwd = a.own === 'P' ? -1 : 1;
+    const y0 = rowOf(i), y1 = rowOf(j);
+    const off = dx === 0 && Math.min(y0, y1) < RIVER_ROW && Math.max(y0, y1) > RIVER_ROW && !GATES.includes(i % COLS); // 突入口を通らず河を越えた
+    a.moved = true; a.prev = i;
+    a.cand = new Set([...a.cand].filter(t => shapeOK(t, dx, dy, fwd, off)));
     if (!d) { board[j] = a; board[i] = null; return 'move'; }
-    if (d.t === '軍旗') { board[j] = a; board[i] = null; return 'flag'; }
-    const r = battle(a.t, d.t);
-    d.cand = new Set([...d.cand].filter(t => battle(a.t, t) === r));
-    a.cand = new Set([...a.cand].filter(t => battle(t, d.t) === r));
+    a.exposed = true;                                  // 攻撃を仕掛けた駒（公開ルールによって正体が知られる）
+    const de = effType(j);
+    const r = outcome(a.t, de);
+    d.cand = new Set([...d.cand].filter(t => t === '軍旗' || outcome(a.t, t) === r));
+    a.cand = new Set([...a.cand].filter(t => outcome(t, de) === r));
     if (r === 1) { board[j] = a; board[i] = null; }
     else if (r === -1) board[i] = null;
     else { board[i] = null; board[j] = null; }
-    return r === 1 ? 'win' : r === -1 ? 'lose' : 'draw';
+    return r === 1 ? 'win' : r === -1 ? 'lose' : 'both';
   }
 
-  function afterMove(res, mover) {
-    moves++;
-    const me = mover === 'P';
+  // ───────── 配置（自陣は23マス＝司令部1マス＋6列×4段の残り。23枚でちょうど埋まる） ─────────
+  function makeSetup(side) {
+    const idx = (dd, x) => side === 'P' ? (RIVER_ROW + 1 + dd) * COLS + x : (RIVER_ROW - 1 - dd) * COLS + x; // dd: 0=最前列 … 3=最後列
+    const used = new Set(), out = [];
+    const alias = (dd, x) => dd === 3 && x === 3;                  // 最後列の右半分は司令部の一部（代表マスに寄せる）
+    const ok = (dd, x) => dd >= 0 && dd < 4 && x >= 0 && x < COLS && !used.has(dd * COLS + (alias(dd, x) ? 2 : x));
+    const put = (dd, x, t) => { if (alias(dd, x)) x = 2; used.add(dd * COLS + x); out.push([idx(dd, x), t]); };
+    const fd = 1 + ri(2), fx = ri(COLS);
+    put(fd, fx, '軍旗');
+    const guard = ['大将','中将','少将','大佐'][ri(4)];
+    put(fd + 1, fx, guard);                                        // 軍旗の真後ろに大物を置く
+    let mines = 2;
+    for (const [dd, x] of shuffle([[fd, fx - 1], [fd, fx + 1], [fd - 1, fx]]))
+      if (mines > 0 && ok(dd, x)) { put(dd, x, '地雷'); mines--; }
+    while (mines > 0) { const dd = 1 + ri(3), x = ri(COLS); if (ok(dd, x)) { put(dd, x, '地雷'); mines--; } }
+    const rest = deck();
+    for (const t of ['軍旗', '地雷', '地雷', guard]) rest.splice(rest.indexOf(t), 1);
+    const cells = [];
+    for (let dd = 0; dd < 4; dd++) for (let x = 0; x < COLS; x++) if (!alias(dd, x) && ok(dd, x)) cells.push([dd, x, dd + (Math.random() - .5) * 3]);
+    cells.sort((p, q) => p[2] - q[2]);
+    const pick = cells.slice(0, rest.length).sort((p, q) => p[0] - q[0] || Math.random() - .5);
+    rest.map(t => [t, FRONT[t] + Math.random() * 1.6]).sort((p, q) => q[1] - p[1])
+      .forEach(([t], k) => put(pick[k][0], pick[k][1], t));
+    return out;
+  }
+  function applySetup(side, list) {
+    const lo = side === 'P' ? P_LO : 0, hi = side === 'P' ? P_HI : RIVER_ROW * COLS;
+    for (let i = lo; i < hi; i++) board[i] = null;
+    for (const [cell, t] of (list || makeSetup(side))) board[cell] = newPiece(t, side);
+  }
+
+  function newGame() {
+    clearTimeout(cpuTimer);
+    board = new Array(ROWS * COLS).fill(null);
+    phase = 'setup'; turn = 'P'; sel = null; setupSel = null; infoCell = null; reveal = false;
+    lastMove = null; quiet = 0; anim = null; flash = null; logs = []; renderLog();
+    applySetup('P'); applySetup('C');
+    for (const b of [btnShuffle, btnSave, btnLoad, btnStart]) b.hidden = false;
+    setStatus('配置フェーズ：入れ替えたい駒を2つ順にタップ。決まったら「開始」');
+    infoEl.textContent = ''; updateTally(); draw();
+  }
+
+  // ───────── 進行 ─────────
+  function play(i, j, mover) {
+    const a = board[i], d = board[j];
+    const res = doMove(i, j);
+    lastMove = { from: i, to: j, by: mover };
+    if (mover === 'P') flash = null;
+    quiet = res === 'move' ? quiet + 1 : 0;
+    if (!REDUCE) { anim = { a, d, from: i, to: j, res, t0: performance.now() }; requestAnimationFrame(loop); }
+    afterMove(res, mover, a.t, d && d.t, a);
+  }
+  function afterMove(res, mover, atkT, defT, atk) {
+    const me = mover === 'P', opp = me ? 'C' : 'P';
+    sel = null; updateTally();
     let msg = '';
-    if (res === 'win') msg = me ? '攻撃: 勝ち！' : 'CPUが攻撃: あなたの駒は負け…';
-    else if (res === 'lose') msg = me ? '攻撃: 負け…' : 'CPUが攻撃: あなたの駒が勝ち！';
-    else if (res === 'draw') msg = me ? '攻撃: 相打ち' : 'CPUが攻撃: 相打ち';
-    sel = null;
-    if (res === 'flag') return finish(me ? 'あなたの勝ち！ 敵の軍旗を取りました 🎉' : 'CPUの勝ち… 軍旗を取られました');
-    const next = me ? 'C' : 'P';
-    if (!hasMove(next)) return finish(me ? 'あなたの勝ち！ 相手は動かせる駒がありません 🎉' : 'CPUの勝ち… あなたは動かせる駒がありません');
-    if (moves >= 400) return finish('引き分け（手数が多すぎました）');
-    turn = next;
+    if (res !== 'move') {
+      let fText, fKind;
+      if (me) {
+        msg = res === 'win' ? 'あなたの' + atkT + 'の攻撃：勝ち（相手の駒を除去）'
+            : res === 'lose' ? 'あなたの' + atkT + 'の攻撃：負け（あなたの' + atkT + 'が除去されました）'
+            : 'あなたの' + atkT + 'の攻撃：相打ち（両方除去）';
+        if (mode === 'attacker') msg += '（CPUに正体が知られました）';
+        fText = res === 'win' ? '勝ち' : res === 'lose' ? atkT + ' 除去' : '相打ち';
+        fKind = res === 'win' ? 'win' : res === 'lose' ? 'lose' : 'both';
+      } else {
+        // CPUの攻撃：勝てば撃破した駒の種類、負ければ失った自駒の種類を知らせる（CPUが勝った場合、CPUの駒の正体は明かさない）
+        msg = res === 'win' ? 'CPUの攻撃：あなたの' + defT + 'が除去されました'
+            : res === 'lose' ? 'CPUの攻撃：' + atkT + 'を撃破！（あなたの' + defT + 'は残りました）'
+            : 'CPUの攻撃：相打ち（あなたの' + defT + 'と相手の駒が除去されました）';
+        if (mode === 'attacker' && res !== 'lose') msg = msg.replace('CPUの攻撃：', 'CPUの攻撃（' + atkT + '）：');
+        if (res === 'lose' && atk) atk.seen = true;      // 撃破した駒は、消える間だけ表向きにする
+        fText = res === 'win' ? defT + ' 除去' : res === 'lose' ? atkT + ' 撃破' : '相打ち（' + defT + '）';
+        fKind = res === 'win' ? 'lose' : res === 'lose' ? 'win' : 'both';
+      }
+      if (mode === 'debug') msg += '［攻撃側：' + atkT + '／守備側：' + defT + '］';
+      addLog(msg);
+      const f = flash = { cell: lastMove.to, text: fText, kind: fKind, t0: performance.now() };
+      setTimeout(() => { if (flash === f) { flash = null; draw(); } }, FLASH_MS + 40);
+    }
+    if (HQ[opp].some(c => board[c] && board[c].own === mover))
+      return finish(me ? 'あなたの勝ち！ 敵の総司令部を占領しました 🎉' : 'CPUの勝ち… 総司令部を占領されました');
+    const oc = { P: officerCount('P'), C: officerCount('C') };
+    if (!oc.P && !oc.C) return finish('引き分け：両軍とも大将〜少佐を失いました');
+    if (!oc[opp]) return finish(me ? 'あなたの勝ち！ 相手は司令部を占領できる駒を失い、降伏しました 🎉' : 'CPUの勝ち… あなたは大将〜少佐をすべて失い、降伏しました');
+    if (!oc[mover]) return finish(me ? 'あなたの負け… 大将〜少佐をすべて失い、降伏しました' : 'あなたの勝ち！ CPUは司令部を占領できる駒を失い、降伏しました 🎉');
+    if (!hasMove(opp)) return finish(me ? 'あなたの勝ち！ 相手は動かせる駒がありません 🎉' : 'CPUの勝ち… あなたは動かせる駒がありません');
+    if (quiet >= QUIET_LIMIT) return finish('引き分け：駒がぶつからないまま100手が過ぎました');
+    turn = opp;
     setStatus((msg ? msg + '　' : '') + (turn === 'P' ? 'あなたの番' : 'CPUが考えています…'));
     draw();
-    if (turn === 'C') setTimeout(cpuMove, 650);
+    if (turn === 'C') cpuTimer = setTimeout(cpuMove, 700);
   }
   function finish(text) {
-    phase = 'over'; reveal = true; setStatus(text + '　（全駒を公開）');
-    btnShuffle.hidden = btnStart.hidden = true; draw();
+    phase = 'over'; reveal = true; sel = null;
+    setStatus(text + '（全駒を公開）');
+    for (const b of [btnShuffle, btnSave, btnLoad, btnStart]) b.hidden = true;
+    draw();
   }
 
-  // ---- CPU（人間の駒の正体は「候補」しか知らない） ----
+  // ───────── CPU（人間の駒は「候補」しか知らない） ─────────
   function cpuMove() {
     if (phase !== 'play' || turn !== 'C') return;
     let best = null, bs = -1e9;
-    board.forEach((a, i) => {
-      if (!a || a.own !== 'C') return;
-      for (const j of dests(board, i)) {
+    for (let i = 0; i < board.length; i++) {
+      const a = board[i];
+      if (!a || a.own !== 'C') continue;
+      const off = isOfficer(a.t);
+      for (const j of dests(i)) {
         const d = board[j];
         let s = Math.random() * 0.6;
         if (d) {
-          let tot = 0, e = 0;
-          for (const t of d.cand) {
+          let tot = 0, ev = 0, win = 0;
+          for (const t of candOf(d)) {
             const w = COUNT[t]; tot += w;
-            if (t === '軍旗') { e += w * 1000; continue; }
-            const r = battle(a.t, t);
-            e += w * (r === 1 ? VAL[t] : r === -1 ? -VAL[a.t] : VAL[t] - VAL[a.t]);
+            if (t === '軍旗') { ev += w * (VAL.軍旗 * 0.8 - 0.2 * VAL[a.t]); win += w * 0.8; continue; }
+            const r = outcome(a.t, t);
+            if (r === 1) { ev += w * VAL[t]; win += w; }
+            else if (r === -1) ev -= w * VAL[a.t];
+            else ev += w * (VAL[t] - VAL[a.t]);
           }
-          s += tot ? e / tot : 0;
+          if (tot) s += ev / tot;
+          if (HQ.P.includes(j) && off) s += 3000 * (tot ? win / tot : 1);
+          if (candOf(d).size > 6) s += 0.8;                 // 正体不明の駒への探り
+          if (DIST_TO.C[j] <= 3) s += 7;                 // 自軍司令部に迫る敵を排除
         } else {
-          s += (((j / COLS) | 0) - ((i / COLS) | 0)) * 0.4; // 前進（下方向）を少し好む
-          const x = j % COLS, y = (j / COLS) | 0;
-          for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+          if (HQ.P.includes(j)) s += 3000;               // 空の敵司令部(大将〜少佐のみ入れる)
+          s += off ? (DIST_TO.P[i] - DIST_TO.P[j]) * 0.8 : (rowOf(j) - rowOf(i)) * 0.35;
+          if (j === a.prev) s -= 1.4;
+          const x = j % COLS, y = rowOf(j);
+          for (const [dx, dy] of DIRS) {
             const nx = x + dx, ny = y + dy;
             if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
             const q = board[ny * COLS + nx];
             if (!q || q.own !== 'P') continue;
-            let tot = 0, danger = 0;
-            for (const t of q.cand) { const w = COUNT[t]; tot += w; if (!FIXED.includes(t) && battle(t, a.t) === 1) danger += w; }
-            s -= tot ? (danger / tot) * VAL[a.t] * 0.6 : 0;
+            let tot = 0, dg = 0;
+            for (const t of candOf(q)) {
+              const w = COUNT[t]; tot += w;
+              if (FIXED.includes(t)) continue;
+              const r = outcome(t, a.t);
+              if (r === 1) dg += w; else if (r === 0) dg += w * 0.4;
+            }
+            if (tot) s -= (dg / tot) * VAL[a.t] * 0.6;
           }
         }
         if (s > bs) { bs = s; best = [i, j]; }
       }
-    });
+    }
     if (!best) return finish('あなたの勝ち！ 相手は動かせる駒がありません 🎉');
-    afterMove(doMove(best[0], best[1]), 'C');
+    play(best[0], best[1], 'C');
   }
 
-  // ---- 入力 ----
+  // ───────── 入力 ─────────
+  function setupTap(i) {
+    if (i < P_LO || i >= P_HI) return;
+    const p = board[i];
+    if (setupSel === null) { if (p) setupSel = i; draw(); return; }
+    if (setupSel === i) { setupSel = null; draw(); return; }
+    board[i] = board[setupSel]; board[setupSel] = p; setupSel = null; draw();
+  }
+
   canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (phase === 'over') return;
     const r = canvas.getBoundingClientRect();
-    const x = Math.floor(((e.clientX - r.left) * canvas.width / r.width - PAD) / CELL);
-    const y = Math.floor(((e.clientY - r.top) * canvas.height / r.height - PAD) / CELL);
+    const px = (e.clientX - r.left) * W / r.width, py = (e.clientY - r.top) * H / r.height;
+    const x = Math.floor((px - PAD) / CELL), y = Math.floor((py - PAD) / CELL);
     if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
-    const i = y * COLS + x, p = board[i];
-    if (phase === 'setup') {
-      if (i < 40) return;
-      if (setupSel === null) { if (p) setupSel = i; }
-      else { [board[setupSel], board[i]] = [board[i], board[setupSel]]; setupSel = null; }
-      draw(); return;
-    }
+    const i = canon(y * COLS + x), p = board[i];
+    if (phase === 'setup') { setupTap(i); return; }
     if (turn !== 'P') return;
-    if (sel !== null && dests(board, sel).includes(i)) { infoCell = null; infoEl.textContent = ''; afterMove(doMove(sel, i), 'P'); return; }
-    if (p && p.own === 'P') { sel = i; infoCell = null; infoEl.textContent = ''; }
-    else if (p) { sel = null; infoCell = i; infoEl.textContent = 'この駒の可能性: ' + TYPES.filter(t => p.cand.has(t)).join('・'); }
-    else sel = null;
+    if (sel !== null && dests(sel).includes(i)) { infoCell = null; infoEl.textContent = ''; play(sel, i, 'P'); return; }
+    if (p && p.own === 'P') {
+      sel = sel === i ? null : i; infoCell = null;
+      infoEl.textContent = sel === null ? '' : p.t + '：' + MOVE_TEXT[p.t];
+    } else if (p) {
+      sel = null; infoCell = i;
+      if (mode === 'debug') infoEl.textContent = '【デバッグ】正体：' + p.t;
+      else if (mode === 'attacker' && p.exposed) infoEl.textContent = '攻撃してきた駒：' + p.t + '（正体判明）';
+      else {
+        const names = TYPES.filter(t => p.cand.has(t));
+        infoEl.textContent = '正体の候補（' + names.length + '種）：' + names.join('・') + (p.moved ? '' : '　※まだ動いていません');
+      }
+    } else { sel = null; infoCell = null; infoEl.textContent = ''; }
     draw();
   });
-  btnShuffle.addEventListener('click', () => { if (phase === 'setup') { setupPlayer(); setupSel = null; draw(); } });
+
+  btnShuffle.addEventListener('click', () => { if (phase === 'setup') { applySetup('P'); setupSel = null; draw(); } });
   btnStart.addEventListener('click', () => {
     if (phase !== 'setup') return;
-    phase = 'play'; setupSel = null; btnShuffle.hidden = btnStart.hidden = true;
-    setStatus('あなたの番（先手）'); draw();
+    phase = 'play'; setupSel = null;
+    for (const b of [btnShuffle, btnSave, btnLoad, btnStart]) b.hidden = true;
+    setStatus('あなたの番（先手）'); infoEl.textContent = ''; draw();
   });
-  document.getElementById('btnReset').addEventListener('click', newGame);
+  const SAVE_KEY = 'gunjin-shogi-formation-6x9-hq1';
+  btnSave.addEventListener('click', () => {
+    if (phase !== 'setup') return;
+    try {
+      const list = []; for (let i = P_LO; i < P_HI; i++) if (board[i]) list.push([i, board[i].t]);
+      localStorage.setItem(SAVE_KEY, JSON.stringify(list));
+      notice('この配置を保存しました');
+    } catch (err) { notice('このブラウザでは保存できませんでした'); }
+  });
+  btnLoad.addEventListener('click', () => {
+    if (phase !== 'setup') return;
+    try {
+      const list = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (!Array.isArray(list)) return notice('保存された配置がありません');
+      const cnt = {}, seen = new Set();
+      let valid = list.length === 23;
+      for (const [cell, t] of list) {
+        if (!Number.isInteger(cell) || cell < P_LO || cell >= P_HI || cell === HQ.P[0] + 1 || seen.has(cell) || !(t in COUNT)) { valid = false; break; }
+        seen.add(cell); cnt[t] = (cnt[t] || 0) + 1;
+      }
+      if (valid) valid = TYPES.every(t => cnt[t] === COUNT[t]);
+      if (!valid) return notice('保存された配置が正しくないため、読み込めません');
+      applySetup('P', list); setupSel = null; draw(); notice('保存した配置を読み込みました');
+    } catch (err) { notice('配置を読み込めませんでした'); }
+  });
+  $('btnReset').addEventListener('click', newGame);
 
-  const setStatus = t => { statusEl.textContent = t; };
-
-  // ---- 描画 ----
-  function draw() {
-    ctx.fillStyle = '#b98b4a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(0,0,0,.08)'; ctx.fillRect(PAD, PAD + 4 * CELL, COLS * CELL, CELL); // 中立帯
-    ctx.strokeStyle = 'rgba(60,35,10,.7)'; ctx.lineWidth = 1.5;
-    for (let i = 0; i <= COLS; i++) { ctx.beginPath(); ctx.moveTo(PAD + i * CELL, PAD); ctx.lineTo(PAD + i * CELL, PAD + ROWS * CELL); ctx.stroke(); }
-    for (let i = 0; i <= ROWS; i++) { ctx.beginPath(); ctx.moveTo(PAD, PAD + i * CELL); ctx.lineTo(PAD + COLS * CELL, PAD + i * CELL); ctx.stroke(); }
-    const legal = sel !== null ? dests(board, sel) : [];
-    board.forEach((p, i) => {
-      const x = PAD + (i % COLS) * CELL, y = PAD + ((i / COLS) | 0) * CELL;
-      if (!p) return;
-      const mine = p.own === 'P', show = mine || reveal;
-      ctx.fillStyle = mine ? '#efe3c6' : (reveal ? '#c98c8c' : '#3a4661');
-      rr(x + 5, y + 5, CELL - 10, CELL - 10, 8); ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = mine || reveal ? '#222' : '#93a0b8';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      if (show) { ctx.font = (p.t.length >= 3 ? 17 : 25) + 'px "Yu Gothic UI","Noto Sans JP",sans-serif'; ctx.fillText(p.t, x + CELL / 2, y + CELL / 2); }
-      else { ctx.font = '22px sans-serif'; ctx.fillText('？', x + CELL / 2, y + CELL / 2); if (p.moved) { ctx.fillStyle = '#ffd54a'; ctx.beginPath(); ctx.arc(x + CELL - 12, y + 12, 4, 0, 7); ctx.fill(); } }
-    });
-    const mark = (i, color, w) => { ctx.strokeStyle = color; ctx.lineWidth = w; rr(PAD + (i % COLS) * CELL + 3, PAD + ((i / COLS) | 0) * CELL + 3, CELL - 6, CELL - 6, 9); ctx.stroke(); };
-    if (sel !== null) mark(sel, '#ffd54a', 4);
-    if (setupSel !== null) mark(setupSel, '#ffd54a', 4);
-    if (infoCell !== null) mark(infoCell, '#4ad7ff', 3);
-    for (const j of legal) {
-      const cx = PAD + (j % COLS) * CELL + CELL / 2, cy = PAD + ((j / COLS) | 0) * CELL + CELL / 2;
-      ctx.beginPath(); ctx.arc(cx, cy, board[j] ? 26 : 7, 0, 7);
-      if (board[j]) { ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 4; ctx.stroke(); } else { ctx.fillStyle = 'rgba(255,213,74,.85)'; ctx.fill(); }
-    }
+  // ───────── 表示まわり ─────────
+  function setStatus(t) { baseStatus = t; statusEl.textContent = t; }
+  function notice(t) { statusEl.textContent = t; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { statusEl.textContent = baseStatus; }, 2400); }
+  function addLog(t) { logs.unshift(t); logs = logs.slice(0, 6); renderLog(); }
+  function renderLog() { logEl.replaceChildren(...logs.map(t => { const d = document.createElement('div'); d.textContent = t; return d; })); }
+  function updateTally() {
+    let pc = 0, cc = 0, po = 0;
+    for (const p of board) { if (!p) continue; if (p.own === 'P') { pc++; if (isOfficer(p.t)) po++; } else cc++; }
+    tallyEl.innerHTML = '<span>自軍 <b>' + pc + '</b>枚（大将〜少佐 <b>' + po + '</b>/6）</span><span>敵軍 <b>' + cc + '</b>枚</span>';
   }
+
+  // ───────── 描画：盤 ─────────
+  const rowY = r => PAD + r * CELL;
+  const cellXY = i => ({ x: PAD + (i % COLS) * CELL, y: rowY(rowOf(i)) });
+  const ctr = i => { const { x, y } = cellXY(i); return { cx: x + (isHQc(i) ? CELL : CELL / 2), cy: y + CELL / 2 }; };
+  const paperPattern = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 96; const g = c.getContext('2d');
+    for (let n = 0; n < 460; n++) {
+      g.fillStyle = Math.random() < .5 ? 'rgba(90,70,30,.07)' : 'rgba(255,250,225,.11)';
+      g.fillRect(Math.random() * 96, Math.random() * 96, 1 + Math.random() * 2, 1);
+    }
+    return ctx.createPattern(c, 'repeat');
+  })();
+
   function rr(x, y, w, h, r) {
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
+  function pentagon(w, h) {
+    ctx.beginPath(); ctx.moveTo(0, -h / 2); ctx.lineTo(w * .36, -h / 2 + h * .2); ctx.lineTo(w / 2, h / 2);
+    ctx.lineTo(-w / 2, h / 2); ctx.lineTo(-w * .36, -h / 2 + h * .2); ctx.closePath();
+  }
 
+  function drawBoard() {
+    const bw = COLS * CELL, bh = ROWS * CELL, ry = rowY(RIVER_ROW);
+    let g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#74522f'); g.addColorStop(1, '#48301a');
+    ctx.fillStyle = g; rr(0, 0, W, H, 18); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,230,170,.18)'; ctx.lineWidth = 1.5; rr(2, 2, W - 4, H - 4, 16); ctx.stroke();
+    ctx.fillStyle = '#dcd0a4'; ctx.fillRect(PAD - 7, PAD - 7, bw + 14, bh + 14);
+    ctx.fillStyle = paperPattern; ctx.fillRect(PAD - 7, PAD - 7, bw + 14, bh + 14);
+    // 陣地の色味（敵陣はやや青み、自陣はやや橙）
+    ctx.fillStyle = 'rgba(70,95,140,.09)'; ctx.fillRect(PAD, rowY(0), bw, RIVER_ROW * CELL);
+    ctx.fillStyle = 'rgba(200,120,40,.10)'; ctx.fillRect(PAD, rowY(RIVER_ROW + 1), bw, RIVER_ROW * CELL);
+    // 方眼
+    ctx.strokeStyle = 'rgba(70,52,28,.62)'; ctx.lineWidth = 1.3; ctx.beginPath();
+    for (let c = 0; c <= COLS; c++) { ctx.moveTo(PAD + c * CELL, PAD); ctx.lineTo(PAD + c * CELL, PAD + bh); }
+    for (let r = 0; r <= ROWS; r++) { ctx.moveTo(PAD, rowY(r)); ctx.lineTo(PAD + bw, rowY(r)); }
+    ctx.stroke();
+    ctx.lineWidth = 2.6; ctx.strokeRect(PAD, PAD, bw, bh);
+    // 河の段：水
+    g = ctx.createLinearGradient(0, ry, 0, ry + CELL); g.addColorStop(0, '#7c9ea4'); g.addColorStop(1, '#5f868f');
+    ctx.fillStyle = g; ctx.fillRect(PAD, ry, bw, CELL);
+    ctx.strokeStyle = 'rgba(235,248,248,.5)'; ctx.lineWidth = 1.4;
+    for (const f of [.28, .5, .72]) {
+      ctx.beginPath();
+      for (let x = PAD; x <= PAD + bw; x += 4) { const y = ry + CELL * f + Math.sin(x / 12 + f * 9) * 3; x === PAD ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(40,30,15,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(PAD, ry); ctx.lineTo(PAD + bw, ry); ctx.moveTo(PAD, ry + CELL); ctx.lineTo(PAD + bw, ry + CELL); ctx.stroke();
+    // 突入口（橋のマス）
+    for (const c of GATES) {
+      const x = PAD + c * CELL;
+      ctx.fillStyle = '#c9a566'; ctx.fillRect(x, ry, CELL, CELL);
+      ctx.strokeStyle = 'rgba(90,60,25,.55)'; ctx.lineWidth = 1.1; ctx.beginPath();
+      for (let y = ry + 9; y < ry + CELL; y += 9) { ctx.moveTo(x, y); ctx.lineTo(x + CELL, y); }
+      ctx.stroke();
+      ctx.strokeStyle = '#4e3317'; ctx.lineWidth = 2.4; ctx.strokeRect(x, ry, CELL, CELL);
+      ctx.fillStyle = 'rgba(244,232,196,.9)'; ctx.fillRect(x + CELL / 2 - 14, ry + 8, 28, CELL - 16);
+      ctx.fillStyle = '#3b2810'; ctx.font = '800 17px ' + SERIF; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      [...'突入口'].forEach((ch, k) => ctx.fillText(ch, x + CELL / 2, ry + CELL / 2 + (k - 1) * 20));
+    }
+    // 総司令部（2マス幅）
+    for (const side of ['C', 'P']) {
+      const { x, y } = cellXY(HQ[side][0]);
+      ctx.fillStyle = '#c4dde3'; ctx.fillRect(x + 1, y + 1, CELL * 2 - 2, CELL - 2);
+      ctx.fillStyle = paperPattern; ctx.fillRect(x + 1, y + 1, CELL * 2 - 2, CELL - 2);
+      ctx.strokeStyle = '#2f6b78'; ctx.lineWidth = 2.2; ctx.strokeRect(x + 4, y + 4, CELL * 2 - 8, CELL - 8);
+      // 駒が乗っても読めるよう、文字は駒の左右に2文字ずつ縦書きで置く
+      ctx.fillStyle = 'rgba(30,86,100,.9)'; ctx.font = '800 20px ' + SERIF; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      [['総', '司', x + 28], ['令', '部', x + CELL * 2 - 28]].forEach(([a, b, tx]) => { ctx.fillText(a, tx, y + CELL / 2 - 13); ctx.fillText(b, tx, y + CELL / 2 + 13); });
+    }
+    if (lastMove) [[lastMove.from, .24], [lastMove.to, .45]].forEach(([i, al]) => { const { x, y } = cellXY(i); ctx.fillStyle = 'rgba(255,240,160,' + al + ')'; ctx.fillRect(x + 1, y + 1, cellW(i) - 2, CELL - 2); });
+  }
+
+  // ───────── 描画：階級章とイラスト ─────────
+  function star(x, y, r) {
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rad = k % 2 ? r * .42 : r; k ? ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad) : ctx.moveTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+    ctx.closePath();
+  }
+  // 旧陸軍の襟章：将官=黄地に星、佐官=赤地に二本線と星、尉官=赤地に一本線と星（少=1、中=2、大=3）
+  function insignia(t, cx, cy) {
+    const n = t[0] === '大' ? 3 : t[0] === '中' ? 2 : 1, kind = t[1], w = 46, h = 25, x = cx - w / 2, y = cy - h / 2;
+    const stars = (sy, r, fill, edge) => { for (let k = 0; k < n; k++) { star(cx + (k - (n - 1) / 2) * 12.5, sy, r); ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = .8; ctx.strokeStyle = edge; ctx.stroke(); } };
+    ctx.save(); ctx.lineJoin = 'round';
+    if (kind === '将') {
+      rr(x, y, w, h, 2.5); ctx.fillStyle = '#e7bd2e'; ctx.fill(); ctx.lineWidth = 1.3; ctx.strokeStyle = '#6f5208'; ctx.stroke();
+      stars(cy, 5.8, '#fff6cf', '#8a6410');
+    } else {
+      rr(x, y, w, h, 2.5); ctx.fillStyle = '#c5281c'; ctx.fill(); ctx.lineWidth = 1.3; ctx.strokeStyle = '#5e120b'; ctx.stroke();
+      ctx.fillStyle = '#f2cd3a';
+      if (kind === '佐') { ctx.fillRect(x + 1.5, y + 3, w - 3, 2.8); ctx.fillRect(x + 1.5, y + h - 5.8, w - 3, 2.8); stars(cy, 4.6, '#f7d84a', '#7a5a08'); }
+      else { ctx.fillRect(x + 1.5, y + h - 7.5, w - 3, 3.2); stars(cy - 3, 4.6, '#f7d84a', '#7a5a08'); }
+    }
+    ctx.restore();
+  }
+  const ICONS = {
+    タンク(cx, cy) {
+      ctx.fillStyle = '#2b3a2c'; rr(cx - 19, cy + 2, 38, 10, 5); ctx.fill();
+      ctx.fillStyle = '#44603f'; rr(cx - 14, cy - 4, 28, 8, 2); ctx.fill(); rr(cx - 8, cy - 11, 17, 8, 3); ctx.fill();
+      ctx.fillRect(cx + 8, cy - 9, 17, 2.8);
+      ctx.fillStyle = '#d6cfa8'; for (const dx of [-12, -4, 4, 12]) { ctx.beginPath(); ctx.arc(cx + dx, cy + 7, 2.3, 0, 7); ctx.fill(); }
+    },
+    飛行機(cx, cy) {
+      ctx.fillStyle = '#2f4a63';
+      ctx.beginPath(); ctx.moveTo(cx, cy - 4); ctx.lineTo(cx + 21, cy + 6); ctx.lineTo(cx + 21, cy + 9.5); ctx.lineTo(cx, cy + 5); ctx.lineTo(cx - 21, cy + 9.5); ctx.lineTo(cx - 21, cy + 6); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cx, cy + 8); ctx.lineTo(cx + 8, cy + 13); ctx.lineTo(cx + 8, cy + 15); ctx.lineTo(cx, cy + 13); ctx.lineTo(cx - 8, cy + 15); ctx.lineTo(cx - 8, cy + 13); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx, cy, 3.6, 14.5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#bcd4e6'; ctx.beginPath(); ctx.ellipse(cx, cy - 5, 1.5, 3, 0, 0, 7); ctx.fill();
+    },
+    騎兵(cx, cy) {                                   // 蹄鉄
+      ctx.lineCap = 'round'; ctx.strokeStyle = '#4a4f57'; ctx.lineWidth = 6.5;
+      ctx.beginPath(); ctx.arc(cx, cy + 2, 10.5, -.18 * Math.PI, 1.18 * Math.PI); ctx.stroke();
+      ctx.fillStyle = '#e8e0c4';
+      for (const a of [.02, .36, .64, .98]) { ctx.beginPath(); ctx.arc(cx + Math.cos(a * Math.PI) * 10.5, cy + 2 + Math.sin(a * Math.PI) * 10.5, 1.5, 0, 7); ctx.fill(); }
+    },
+    工兵(cx, cy) {                                   // つるはしとシャベル
+      ctx.lineCap = 'round'; ctx.strokeStyle = '#6b4a22'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx - 11, cy + 11); ctx.lineTo(cx + 11, cy - 9); ctx.moveTo(cx + 11, cy + 11); ctx.lineTo(cx - 11, cy - 9); ctx.stroke();
+      ctx.strokeStyle = '#4a4f57'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(cx + 3, cy - 12); ctx.quadraticCurveTo(cx + 13, cy - 15, cx + 19, cy - 6); ctx.stroke();
+      ctx.fillStyle = '#4a4f57'; ctx.beginPath(); ctx.ellipse(cx - 12, cy - 10, 7, 4.5, Math.atan2(-20, -22), 0, 7); ctx.fill();
+    },
+    スパイ(cx, cy) {                                 // 中折れ帽とサングラス
+      ctx.fillStyle = '#2a2a33'; ctx.beginPath(); ctx.ellipse(cx, cy - 1, 18, 4.6, 0, 0, 7); ctx.fill();
+      rr(cx - 9.5, cy - 11, 19, 11, 4); ctx.fill();
+      ctx.fillStyle = '#8a2a22'; ctx.fillRect(cx - 9.5, cy - 5, 19, 3);
+      ctx.fillStyle = '#111'; for (const dx of [-6.5, 6.5]) { ctx.beginPath(); ctx.ellipse(cx + dx, cy + 8, 5.4, 3.6, 0, 0, 7); ctx.fill(); }
+      ctx.strokeStyle = '#111'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(cx - 2, cy + 7.5); ctx.lineTo(cx + 2, cy + 7.5); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; for (const dx of [-8, 5]) { ctx.beginPath(); ctx.arc(cx + dx, cy + 6.6, 1, 0, 7); ctx.fill(); }
+    },
+    地雷(cx, cy) {
+      ctx.lineCap = 'round'; ctx.strokeStyle = '#2a2a2a'; ctx.lineWidth = 3.4;
+      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 8, cy + Math.sin(a) * 8); ctx.lineTo(cx + Math.cos(a) * 14, cy + Math.sin(a) * 14); ctx.stroke(); }
+      ctx.fillStyle = '#2a2a2a'; ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#c9442c'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(cx - 3.5, cy - 3.5, 2, 0, 7); ctx.fill();
+    },
+    軍旗(cx, cy) {                                   // 旗竿に日の丸の旗
+      ctx.strokeStyle = '#5a3d1c'; ctx.lineWidth = 2.8; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx - 14, cy + 14); ctx.lineTo(cx - 14, cy - 14); ctx.stroke();
+      ctx.fillStyle = '#fbf3df'; ctx.fillRect(cx - 13, cy - 14, 29, 19);
+      ctx.lineWidth = 1.2; ctx.strokeStyle = '#3a2a14'; ctx.strokeRect(cx - 13, cy - 14, 29, 19);
+      ctx.fillStyle = '#c9301f'; ctx.beginPath(); ctx.arc(cx + 1.5, cy - 4.5, 5.6, 0, 7); ctx.fill();
+    }
+  };
+  function drawIcon(t, cx, cy) {
+    ctx.save(); ctx.lineJoin = 'round';
+    if (ICONS[t]) ICONS[t](cx, cy); else insignia(t, cx, cy);
+    ctx.restore();
+  }
+  function inkOf(t) {
+    if (t === '大将' || t === '中将' || t === '少将' || t === '軍旗') return '#a3271a';
+    if (t === '大尉' || t === '中尉' || t === '少尉') return '#4b3d28';
+    if (t === '騎兵' || t === '工兵' || t === 'タンク' || t === '飛行機' || t === 'スパイ') return '#1e5a49';
+    return '#201a12';
+  }
+
+  function drawPiece(p, cx, cy, alpha = 1, scale = 1) {
+    const show = visible(p), w = 78 * scale, h = 84 * scale;
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.save(); ctx.translate(cx, cy); if (p.own === 'C') ctx.rotate(Math.PI);   // 駒の頭は敵陣を向く
+    pentagon(w, h);
+    ctx.shadowColor = 'rgba(30,20,5,.5)'; ctx.shadowBlur = 6 * scale; ctx.shadowOffsetY = 2.5;
+    const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    if (!show) { g.addColorStop(0, '#3b4762'); g.addColorStop(1, '#212a3d'); }
+    else if (p.own === 'P') { g.addColorStop(0, '#f7e8bb'); g.addColorStop(1, '#dcc386'); }
+    else { g.addColorStop(0, '#efc9b3'); g.addColorStop(1, '#d0a088'); }
+    ctx.fillStyle = g; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 2; ctx.strokeStyle = show ? '#6e4f24' : '#0d121c'; ctx.stroke();
+    ctx.save(); ctx.scale(.86, .88); pentagon(w, h); ctx.lineWidth = 1.2; ctx.strokeStyle = show ? 'rgba(110,79,36,.45)' : 'rgba(205,185,120,.28)'; ctx.stroke(); ctx.restore();
+    ctx.restore();
+    if (show) {
+      const mine = p.own === 'P', iy = cy + (mine ? -11 : -25) * scale, ty = cy + (mine ? 24 : 10) * scale;
+      ctx.save(); ctx.translate(cx, iy); ctx.scale(scale, scale); drawIcon(p.t, 0, 0); ctx.restore();
+      const fs = (p.t.length === 2 ? 23 : 18) * scale;
+      ctx.font = '800 ' + fs + 'px ' + SERIF; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fillText(p.t, cx + .8, ty + .9);
+      ctx.fillStyle = inkOf(p.t); ctx.fillText(p.t, cx, ty);
+      if (p.own === 'P' && mode === 'attacker' && p.exposed) {   // CPUに正体が知られている自軍の駒
+        const bx = cx + 28 * scale, by = cy - 22 * scale;
+        ctx.fillStyle = '#c9442c'; ctx.beginPath(); ctx.arc(bx, by, 10 * scale, 0, 7); ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff3df'; ctx.stroke();
+        ctx.fillStyle = '#fff3df'; ctx.font = '800 ' + 12 * scale + 'px ' + SERIF; ctx.fillText('見', bx, by + .5 * scale);
+      }
+    } else if (p.moved) {
+      ctx.fillStyle = '#c9442c'; ctx.beginPath(); ctx.arc(cx, cy, 6 * scale, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,225,190,.5)'; ctx.lineWidth = 1.2; ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function draw(now = performance.now()) {
+    drawBoard();
+    const A = anim && now - anim.t0 < ANIM_MS ? anim : null;
+    board.forEach((p, i) => {
+      if (!p || (A && p === A.a)) return;
+      const { cx, cy } = ctr(i);
+      drawPiece(p, cx, cy - (i === sel ? 3 : 0), 1, i === sel ? 1.05 : 1);
+    });
+    if (A) {
+      const u = (now - A.t0) / ANIM_MS, m = Math.min(1, u / .55), c = Math.max(0, (u - .55) / .45), e = 1 - Math.pow(1 - m, 3);
+      const f = ctr(A.from), t = ctr(A.to);
+      if (A.d && board[A.to] !== A.d) drawPiece(A.d, t.cx, t.cy, 1 - c);
+      drawPiece(A.a, f.cx + (t.cx - f.cx) * e, f.cy + (t.cy - f.cy) * e, board[A.to] === A.a ? 1 : 1 - c);
+      if (A.res !== 'move' && c > 0) {
+        ctx.strokeStyle = 'rgba(201,68,44,' + (0.9 * (1 - c)) + ')'; ctx.lineWidth = 1 + 5 * (1 - c);
+        ctx.beginPath(); ctx.arc(t.cx, t.cy, 22 + c * 40, 0, 7); ctx.stroke();
+      }
+    }
+    if (lastMove && phase !== 'setup') {                       // 直前に動いたマス：動いた先は実線、動く前は点線（CPUは赤、自分は青緑）
+      const col = lastMove.by === 'C' ? '#c9442c' : '#2f7f95';
+      const frame = (i, dashed) => {
+        const { x, y } = cellXY(i);
+        ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = dashed ? 2.6 : 4.6; if (dashed) ctx.setLineDash([7, 5]);
+        rr(x + 4, y + 4, cellW(i) - 8, CELL - 8, 10); ctx.stroke(); ctx.restore();
+      };
+      frame(lastMove.from, true); frame(lastMove.to, false);
+    }
+    if (flash && now - flash.t0 < FLASH_MS) {                    // 戦闘結果をマスの上に表示
+      const { cx, cy } = ctr(flash.cell);
+      ctx.save(); ctx.font = '800 19px ' + SERIF; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(flash.text).width + 24, th = 32;
+      const x = Math.max(PAD + 3, Math.min(PAD + COLS * CELL - tw - 3, cx - tw / 2));
+      const y = cy - 76 < PAD + 2 ? cy + 44 : cy - 76;
+      rr(x, y, tw, th, 8);
+      ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+      ctx.fillStyle = flash.kind === 'win' ? '#e7bd2e' : flash.kind === 'lose' ? '#b93a24' : '#55646c'; ctx.fill();
+      ctx.shadowColor = 'transparent'; ctx.lineWidth = 1.6; ctx.strokeStyle = '#fff3df'; ctx.stroke();
+      ctx.fillStyle = flash.kind === 'win' ? '#241d14' : '#fff3df'; ctx.fillText(flash.text, x + tw / 2, y + th / 2 + 1);
+      ctx.restore();
+    }
+    const mark = (i, color, lw) => { const { x, y } = cellXY(i); ctx.strokeStyle = color; ctx.lineWidth = lw; rr(x + 3, y + 3, (isHQc(i) ? CELL * 2 : CELL) - 6, CELL - 6, 10); ctx.stroke(); };
+    ctx.save(); ctx.shadowColor = 'rgba(232,181,58,.8)'; ctx.shadowBlur = 9;
+    if (sel !== null) mark(sel, '#e8b53a', 4);
+    if (setupSel !== null) mark(setupSel, '#e8b53a', 4);
+    ctx.restore();
+    if (infoCell !== null) mark(infoCell, '#fbf6e4', 3.5);
+    if (sel !== null && phase === 'play') for (const j of dests(sel)) {
+      const { cx, cy } = ctr(j);
+      if (board[j]) { ctx.strokeStyle = '#c9442c'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, 40, 0, 7); ctx.stroke(); }
+      else { ctx.fillStyle = 'rgba(232,181,58,.22)'; ctx.beginPath(); ctx.arc(cx, cy, 19, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(122,82,12,.85)'; ctx.beginPath(); ctx.arc(cx, cy, 7.5, 0, 7); ctx.fill(); }
+    }
+  }
+  function loop(now) {
+    draw(now);
+    if (anim && now - anim.t0 < ANIM_MS) requestAnimationFrame(loop); else { anim = null; draw(); }
+  }
+
+  // ───────── ルール表（駒の一覧・勝負表） ─────────
+  (() => {
+    const tb = document.querySelector('#pieceTable tbody');
+    for (const t of TYPES) {
+      const tr = document.createElement('tr');
+      for (const v of [t, COUNT[t] + '枚', MOVE_TEXT[t]]) { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }
+      tb.appendChild(tr);
+    }
+    const names = TYPES.filter(t => t !== '軍旗'), m = $('matrix');
+    const hr = document.createElement('tr'); hr.appendChild(document.createElement('th'));
+    for (const c of names) { const th = document.createElement('th'); th.textContent = c; hr.appendChild(th); }
+    const thead = document.createElement('thead'); thead.appendChild(hr); m.appendChild(thead);
+    const body = document.createElement('tbody');
+    for (const r of names) {
+      const tr = document.createElement('tr'), th = document.createElement('th'); th.textContent = r; tr.appendChild(th);
+      for (const c of names) { const v = chartCell(r, c), td = document.createElement('td'); td.textContent = v; td.className = v === '○' ? 'w' : v === '×' ? 'l' : 'd'; tr.appendChild(td); }
+      body.appendChild(tr);
+    }
+    m.appendChild(body);
+  })();
+
+  try { const m = localStorage.getItem('gunjin-shogi-mode'); if (m === 'original' || m === 'attacker' || m === 'debug') mode = m; } catch (err) { /* 保存できない環境では既定のまま */ }
+  document.querySelectorAll('input[name="mode"]').forEach(r => {
+    r.checked = r.value === mode;
+    r.addEventListener('change', () => {
+      if (!r.checked) return;
+      mode = r.value; infoCell = null; infoEl.textContent = '';
+      try { localStorage.setItem('gunjin-shogi-mode', mode); } catch (err) { /* 保存できなくても動作には影響しない */ }
+      draw();
+    });
+  });
   newGame();
+  if (document.fonts && document.fonts.load) {
+    Promise.all([document.fonts.load('800 20px "Shippori Mincho B1"', '大中少佐尉将騎兵工タンク飛行機スパイ地雷軍旗突入口総司令部'),
+                 document.fonts.load('700 14px "Zen Kaku Gothic New"')]).then(() => draw()).catch(() => {});
+  }
 })();
 </script>
 </body>
