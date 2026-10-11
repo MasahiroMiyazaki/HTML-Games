@@ -40,13 +40,14 @@
   .btn.primary { background:var(--vermilion); color:#fff3df; border-bottom-color:var(--vermilion-deep); }
   .btn.primary:hover { background:#c9442c; }
   .btn:focus-visible, summary:focus-visible { outline:3px solid var(--gold); outline-offset:2px; }
-  #modeSel { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; align-items:center; }
-  #modeSel .modeLabel { font-size:13px; color:var(--dim); margin-right:4px; }
-  #modeSel label { position:relative; cursor:pointer; }
-  #modeSel input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
-  #modeSel label span { display:block; padding:6px 12px; border-radius:6px; font-size:13px; font-weight:700; background:rgba(0,0,0,.22); color:var(--cream); border:1px solid rgba(239,231,204,.18); }
-  #modeSel input:checked + span { background:var(--slip); color:var(--ink); border-color:var(--slip-edge); }
-  #modeSel input:focus-visible + span { outline:3px solid var(--gold); outline-offset:2px; }
+  #modeSel, #cpuSel { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; align-items:center; }
+  #modeSel .modeLabel, #cpuSel .modeLabel { font-size:13px; color:var(--dim); margin-right:4px; }
+  #modeSel label, #cpuSel label { position:relative; cursor:pointer; }
+  #modeSel input, #cpuSel input { position:absolute; opacity:0; inset:0; margin:0; cursor:pointer; }
+  #modeSel label span, #cpuSel label span { display:block; padding:6px 12px; border-radius:6px; font-size:13px; font-weight:700; background:rgba(0,0,0,.22); color:var(--cream); border:1px solid rgba(239,231,204,.18); }
+  #modeSel input:checked + span, #cpuSel input:checked + span { background:var(--slip); color:var(--ink); border-color:var(--slip-edge); }
+  #cpuSel input:disabled + span { opacity:.45; } #cpuSel input:disabled { cursor:not-allowed; }
+  #modeSel input:focus-visible + span, #cpuSel input:focus-visible + span { outline:3px solid var(--gold); outline-offset:2px; }
   #log { background:rgba(0,0,0,.2); border-radius:8px; padding:8px 14px; font-size:13px; color:var(--dim); min-height:46px; }
   #log div:first-child { color:var(--cream); font-weight:700; }
   #log:empty::before { content:"戦闘の記録はここに出ます"; }
@@ -83,6 +84,12 @@
     <label><input type="radio" name="mode" value="attacker"><span>攻撃者のみ判明</span></label>
     <label><input type="radio" name="mode" value="debug"><span>全公開（デバッグ）</span></label>
   </div>
+  <div id="cpuSel" role="radiogroup" aria-label="CPUの配置の強さ">
+    <span class="modeLabel">CPUの配置</span>
+    <label><input type="radio" name="cpulv" value="easy"><span>かんたん</span></label>
+    <label><input type="radio" name="cpulv" value="normal" checked><span>ふつう</span></label>
+    <label><input type="radio" name="cpulv" value="hard"><span>つよい</span></label>
+  </div>
   <div id="controls">
     <button class="btn" id="btnShuffle">配置シャッフル</button>
     <button class="btn" id="btnSave">配置を保存</button>
@@ -100,6 +107,7 @@
       <li><b>特別な駒</b>：スパイは大将にだけ勝ちます。地雷は工兵と飛行機以外に勝ちますが、触れた駒といっしょに爆発して消えます。軍旗は、真後ろにいる自軍の駒と同じ強さで戦い、後ろに駒がなければ誰にでも負けます。</li>
       <li><b>引き分け</b>：駒のぶつかり合いがないまま100手が過ぎたとき。</li>
       <li><b>公開ルール</b>：「原ルール」は、ぶつかっても勝ち負けしか分かりません（ルールページのとおり）。「攻撃者のみ判明」は、攻撃を仕掛けた駒の正体が相手に知られます（攻撃した駒が負けて消えても同じ）。知られた自軍の駒には「見」の印が付き、CPUもその正体を前提に動きます。守られた側の正体は、勝ち負けから推理します。「全公開（デバッグ）」は、敵の駒をすべて表向きに表示します。CPUの見え方は変わりません。「攻撃者のみ判明」と「全公開」は、ルールページにはない設定です。</li>
+      <li><b>CPUの配置</b>：配置フェーズで、CPUの駒の並べ方の強さを選べます（開始後は変えられません）。「かんたん」は、わざと守りの薄い配置です（総司令部の入口が手薄で、軍旗の後ろに大駒がなく、スパイと大将が離れています）。「ふつう」は、軍旗の後ろに大駒を置き、動ける駒を前列に、強い駒を中段に置きます。「つよい」は、総司令部の入口を地雷や大駒で固め、突入口の手前に強い駒を置き、スパイを大将のそばに、工兵を前列に置きます。CPUの読みの強さは変わらず、配置だけが変わります。</li>
       <li><b>戦闘結果の表示</b>：CPUの攻撃に勝ったときは、撃破した駒の種類を表示します。負けたときは、失ったあなたの駒の種類を表示します（負けたときにCPUの駒の正体は明かされません）。結果はマスの上にも出ます。</li>
       <li><b>直前の動き</b>：動いた先のマスは実線の枠、動く前のマスは点線の枠で示します。赤はCPU、青緑はあなたの動きです。</li>
       <li><b>推理</b>：敵の駒をタップすると、これまでの動きと勝敗から絞り込んだ正体の候補が出ます。駒の中央の朱い点は、その駒がすでに動いたしるしです。</li>
@@ -321,10 +329,78 @@
       .forEach(([t], k) => put(pick[k][0], pick[k][1], t));
     return out;
   }
+  // ───────── CPUの配置の強さ（easy=わざと守りの薄い配置 / normal=標準 / hard=堅陣） ─────────
+  let cpuLevel = 'normal';
+  const EASY_ITERS = 400;   // 「かんたん」の守りの薄さ（大きいほどわざと弱い配置になる）
+  const sideIdx = (side, dd, x) => side === 'P' ? (RIVER_ROW + 1 + dd) * COLS + x : (RIVER_ROW - 1 - dd) * COLS + x;
+  const keyOf = (dd, x) => dd * COLS + (dd === 3 && x === 3 ? 2 : x);        // 司令部の右半分は代表マスに寄せる
+  const ALL_KEYS = (() => { const a = []; for (let dd = 0; dd < 4; dd++) for (let x = 0; x < COLS; x++) if (!(dd === 3 && x === 3)) a.push(dd * COLS + x); return a; })();
+  const HQ_KEY = keyOf(3, 2), GATE_FRONTS = [keyOf(0, 1), keyOf(0, 4)], HQ_ENTRIES = [keyOf(2, 2), keyOf(2, 3), keyOf(3, 1), keyOf(3, 4)];
+  function neighborKeys(k) {
+    if (k === HQ_KEY) return HQ_ENTRIES.slice();
+    const dd = (k / COLS) | 0, x = k % COLS;
+    return [[dd - 1, x], [dd + 1, x], [dd, x - 1], [dd, x + 1]].filter(([a, b]) => a >= 0 && a < 4 && b >= 0 && b < COLS).map(([a, b]) => keyOf(a, b));
+  }
+  function makeSetupRandom(side) {
+    const types = shuffle(deck());
+    return ALL_KEYS.map((k, n) => [sideIdx(side, (k / COLS) | 0, k % COLS), types[n]]);
+  }
+  // 配置の良し悪し：司令部の入口を地雷や大駒で固める／突入口の手前に強い駒／軍旗の後ろに大駒／スパイは大将のそば／工兵は前列で偵察
+  function setupFitness(M, w) {
+    let f = 0;
+    for (const [k, t] of M) {
+      const dd = (k / COLS) | 0, x = k % COLS, nb = neighborKeys(k), gf = GATE_FRONTS.includes(k), entry = HQ_ENTRIES.includes(k);
+      if (t === '地雷') {
+        if (k === HQ_KEY) f += 7 * w.hq; else if (entry) f += 3 * w.hq;
+        if (gf) f -= 2;
+        if (nb.some(n => M.get(n) === '軍旗')) f += 2 * w.flag;
+      } else if (t === '軍旗') {
+        if (dd === 0) f -= 6;
+        if (dd === 3) f -= 4;
+        if (gf) f -= 3;
+        const b = M.get(keyOf(dd + 1, x));
+        if (b === undefined || b === '地雷' || b === '軍旗') f -= 3; else f += 0.7 * (POW[b] || 0) * w.flag;
+      } else {
+        const p = POW[t];
+        if (gf) { f += 0.45 * p * w.gate; if (t === '騎兵' || t === '工兵' || t === 'スパイ') f -= 3; }
+        if (entry && isOfficer(t)) f += 0.35 * p * w.hq;
+        if (t === 'スパイ') { if (nb.some(n => M.get(n) === '大将')) f += 5; else if (nb.some(n => M.get(n) === '中将')) f += 2; }
+        if (t === '工兵') f += dd === 0 ? 1.2 : dd === 3 ? -0.5 : 0;
+        if (t === 'タンク' || t === '騎兵' || t === '飛行機') f += dd <= 1 ? 1 : 0;
+        if (t === '少尉' || t === '中尉' || t === '騎兵') f += dd === 0 ? 0.6 : 0;
+        if (isOfficer(t) && dd === 0) f -= 0.8;
+      }
+    }
+    if (GATE_FRONTS.every(g => FIXED.includes(M.get(g)))) f -= 8;        // 両方の突入口の手前が動けない駒だと、自軍が河を渡れない
+    return f;
+  }
+  // 配置の評価値を山登りで上げる（dir=1: 堅陣）／下げる（dir=-1: わざと守りの薄い配置）
+  function makeSetupClimb(side, dir, start, iters) {
+    const M = new Map();
+    for (const [cell, t] of start) {
+      const row = (cell / COLS) | 0, dd = side === 'P' ? row - (RIVER_ROW + 1) : RIVER_ROW - 1 - row;
+      M.set(keyOf(dd, cell % COLS), t);
+    }
+    const jit = () => 0.75 + Math.random() * 0.5, w = { hq: jit(), flag: jit(), gate: jit() };   // 毎回少し重みを変えて、同じ配置にならないようにする
+    let cur = setupFitness(M, w) * dir;
+    for (let it = 0; it < iters; it++) {
+      const a = ALL_KEYS[ri(ALL_KEYS.length)], b = ALL_KEYS[ri(ALL_KEYS.length)];
+      if (a === b) continue;
+      const ta = M.get(a), tb = M.get(b);
+      M.set(a, tb); M.set(b, ta);
+      const f = setupFitness(M, w) * dir;
+      if (f >= cur || Math.random() < 0.01) cur = f; else { M.set(a, ta); M.set(b, tb); }
+    }
+    return [...M].map(([k, t]) => [sideIdx(side, (k / COLS) | 0, k % COLS), t]);
+  }
+  const makeSetupStrong = side => makeSetupClimb(side, 1, makeSetup(side), 1500);
+  const makeSetupWeak = side => makeSetupClimb(side, -1, makeSetupRandom(side), EASY_ITERS);
+  const makeSetupBy = (level, side) => level === 'easy' ? makeSetupWeak(side) : level === 'hard' ? makeSetupStrong(side) : makeSetup(side);
+
   function applySetup(side, list) {
     const lo = side === 'P' ? P_LO : 0, hi = side === 'P' ? P_HI : RIVER_ROW * COLS;
     for (let i = lo; i < hi; i++) board[i] = null;
-    for (const [cell, t] of (list || makeSetup(side))) board[cell] = newPiece(t, side);
+    for (const [cell, t] of (list || (side === 'C' ? makeSetupBy(cpuLevel, 'C') : makeSetup('P')))) board[cell] = newPiece(t, side);
   }
 
   function newGame() {
@@ -334,6 +410,7 @@
     lastMove = null; quiet = 0; anim = null; flash = null; logs = []; renderLog();
     applySetup('P'); applySetup('C');
     for (const b of [btnShuffle, btnSave, btnLoad, btnStart]) b.hidden = false;
+    lockCpuSel(false);
     setStatus('配置フェーズ：入れ替えたい駒を2つ順にタップ。決まったら「開始」');
     infoEl.textContent = ''; updateTally(); draw();
   }
@@ -397,12 +474,13 @@
   }
 
   // ───────── CPU（人間の駒は「候補」しか知らない） ─────────
-  function cpuMove() {
-    if (phase !== 'play' || turn !== 'C') return;
+  function cpuMove(side = 'C') {
+    const opp = side === 'C' ? 'P' : 'C', fwdRow = side === 'C' ? 1 : -1;
+    if (phase !== 'play' || turn !== side) return;
     let best = null, bs = -1e9;
     for (let i = 0; i < board.length; i++) {
       const a = board[i];
-      if (!a || a.own !== 'C') continue;
+      if (!a || a.own !== side) continue;
       const off = isOfficer(a.t);
       for (const j of dests(i)) {
         const d = board[j];
@@ -418,19 +496,19 @@
             else ev += w * (VAL[t] - VAL[a.t]);
           }
           if (tot) s += ev / tot;
-          if (HQ.P.includes(j) && off) s += 3000 * (tot ? win / tot : 1);
+          if (HQ[opp].includes(j) && off) s += 3000 * (tot ? win / tot : 1);
           if (candOf(d).size > 6) s += 0.8;                 // 正体不明の駒への探り
-          if (DIST_TO.C[j] <= 3) s += 7;                 // 自軍司令部に迫る敵を排除
+          if (DIST_TO[side][j] <= 3) s += 7;             // 自軍司令部に迫る敵を排除
         } else {
-          if (HQ.P.includes(j)) s += 3000;               // 空の敵司令部(大将〜少佐のみ入れる)
-          s += off ? (DIST_TO.P[i] - DIST_TO.P[j]) * 0.8 : (rowOf(j) - rowOf(i)) * 0.35;
+          if (HQ[opp].includes(j)) s += 3000;            // 空の敵司令部(大将〜少佐のみ入れる)
+          s += off ? (DIST_TO[opp][i] - DIST_TO[opp][j]) * 0.8 : (rowOf(j) - rowOf(i)) * fwdRow * 0.35;
           if (j === a.prev) s -= 1.4;
           const x = j % COLS, y = rowOf(j);
           for (const [dx, dy] of DIRS) {
             const nx = x + dx, ny = y + dy;
             if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
             const q = board[ny * COLS + nx];
-            if (!q || q.own !== 'P') continue;
+            if (!q || q.own !== opp) continue;
             let tot = 0, dg = 0;
             for (const t of candOf(q)) {
               const w = COUNT[t]; tot += w;
@@ -444,8 +522,8 @@
         if (s > bs) { bs = s; best = [i, j]; }
       }
     }
-    if (!best) return finish('あなたの勝ち！ 相手は動かせる駒がありません 🎉');
-    play(best[0], best[1], 'C');
+    if (!best) return finish(side === 'C' ? 'あなたの勝ち！ 相手は動かせる駒がありません 🎉' : 'CPUの勝ち… あなたは動かせる駒がありません');
+    play(best[0], best[1], side);
   }
 
   // ───────── 入力 ─────────
@@ -483,10 +561,10 @@
     draw();
   });
 
-  btnShuffle.addEventListener('click', () => { if (phase === 'setup') { applySetup('P'); setupSel = null; draw(); } });
+  btnShuffle.addEventListener('click', () => { if (phase === 'setup') { applySetup('P'); applySetup('C'); setupSel = null; draw(); } }); // 自軍とCPUの両方の配置を組み直す（CPUの配置は伏せられたまま）
   btnStart.addEventListener('click', () => {
     if (phase !== 'setup') return;
-    phase = 'play'; setupSel = null;
+    phase = 'play'; setupSel = null; lockCpuSel(true);
     for (const b of [btnShuffle, btnSave, btnLoad, btnStart]) b.hidden = true;
     setStatus('あなたの番（先手）'); infoEl.textContent = ''; draw();
   });
@@ -518,6 +596,7 @@
   $('btnReset').addEventListener('click', newGame);
 
   // ───────── 表示まわり ─────────
+  function lockCpuSel(locked) { document.querySelectorAll('input[name="cpulv"]').forEach(r => { r.disabled = locked; }); }
   function setStatus(t) { baseStatus = t; statusEl.textContent = t; }
   function notice(t) { statusEl.textContent = t; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { statusEl.textContent = baseStatus; }, 2400); }
   function addLog(t) { logs.unshift(t); logs = logs.slice(0, 6); renderLog(); }
@@ -807,6 +886,16 @@
       mode = r.value; infoCell = null; infoEl.textContent = '';
       try { localStorage.setItem('gunjin-shogi-mode', mode); } catch (err) { /* 保存できなくても動作には影響しない */ }
       draw();
+    });
+  });
+  try { const m = localStorage.getItem('gunjin-shogi-cpu-setup'); if (m === 'easy' || m === 'normal' || m === 'hard') cpuLevel = m; } catch (err) { /* 保存できない環境では既定のまま */ }
+  document.querySelectorAll('input[name="cpulv"]').forEach(r => {
+    r.checked = r.value === cpuLevel;
+    r.addEventListener('change', () => {
+      if (!r.checked || phase !== 'setup') return;
+      cpuLevel = r.value;
+      try { localStorage.setItem('gunjin-shogi-cpu-setup', cpuLevel); } catch (err) { /* 保存できなくても動作には影響しない */ }
+      applySetup('C'); draw();
     });
   });
   newGame();
