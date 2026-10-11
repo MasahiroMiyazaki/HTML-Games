@@ -107,7 +107,7 @@
       <li><b>特別な駒</b>：スパイは大将にだけ勝ちます。地雷は工兵と飛行機以外に勝ちますが、触れた駒といっしょに爆発して消えます。軍旗は、真後ろにいる自軍の駒と同じ強さで戦い、後ろに駒がなければ誰にでも負けます。</li>
       <li><b>引き分け</b>：駒のぶつかり合いがないまま100手が過ぎたとき。</li>
       <li><b>公開ルール</b>：「原ルール」は、ぶつかっても勝ち負けしか分かりません（ルールページのとおり）。「攻撃者のみ判明」は、攻撃を仕掛けた駒の正体が相手に知られます（攻撃した駒が負けて消えても同じ）。知られた自軍の駒には「見」の印が付き、CPUもその正体を前提に動きます。守られた側の正体は、勝ち負けから推理します。「全公開（デバッグ）」は、敵の駒をすべて表向きに表示します。CPUの見え方は変わりません。「攻撃者のみ判明」と「全公開」は、ルールページにはない設定です。</li>
-      <li><b>CPUの配置</b>：配置フェーズで、CPUの駒の並べ方の強さを選べます（開始後は変えられません）。「かんたん」は、わざと守りの薄い配置です（総司令部の入口が手薄で、軍旗の後ろに大駒がなく、スパイと大将が離れています）。「ふつう」は、軍旗の後ろに大駒を置き、動ける駒を前列に、強い駒を中段に置きます。「つよい」は、総司令部の入口を地雷や大駒で固め、突入口の手前に強い駒を置き、スパイを大将のそばに、工兵を前列に置きます。CPUの読みの強さは変わらず、配置だけが変わります。</li>
+      <li><b>CPUの配置</b>：配置フェーズで、CPUの駒の並べ方の強さを選べます（開始後は変えられません）。「かんたん」は、わざと守りの薄い配置です（総司令部とその入口を弱い駒で守り、軍旗は最前列にむき出しで、地雷は奥の隅、将官と佐官は両端に置きます）。「ふつう」は、すべてランダムです。「つよい」は、総司令部とその入口を地雷や大駒で固め、軍旗の後ろに大駒を置き、突入口の手前に強い駒を置いた配置です（CPU同士の対戦で、ランダムな配置に約67%、「かんたん」に約76%勝ちました）。CPUの読みの強さは変わらず、配置だけが変わります。自軍の「配置シャッフル」はランダムです。CPUの動きも、司令部に迫る敵は勝てそうなときだけ攻撃して排除します。「ふつう」では少将が1枚、司令部の近くにとどまって守ります。</li>
       <li><b>戦闘結果の表示</b>：CPUの攻撃に勝ったときは、撃破した駒の種類を表示します。負けたときは、失ったあなたの駒の種類を表示します（負けたときにCPUの駒の正体は明かされません）。結果はマスの上にも出ます。</li>
       <li><b>直前の動き</b>：動いた先のマスは実線の枠、動く前のマスは点線の枠で示します。赤はCPU、青緑はあなたの動きです。</li>
       <li><b>推理</b>：敵の駒をタップすると、これまでの動きと勝敗から絞り込んだ正体の候補が出ます。駒の中央の朱い点は、その駒がすでに動いたしるしです。</li>
@@ -304,34 +304,9 @@
     return r === 1 ? 'win' : r === -1 ? 'lose' : 'both';
   }
 
-  // ───────── 配置（自陣は23マス＝司令部1マス＋6列×4段の残り。23枚でちょうど埋まる） ─────────
-  function makeSetup(side) {
-    const idx = (dd, x) => side === 'P' ? (RIVER_ROW + 1 + dd) * COLS + x : (RIVER_ROW - 1 - dd) * COLS + x; // dd: 0=最前列 … 3=最後列
-    const used = new Set(), out = [];
-    const alias = (dd, x) => dd === 3 && x === 3;                  // 最後列の右半分は司令部の一部（代表マスに寄せる）
-    const ok = (dd, x) => dd >= 0 && dd < 4 && x >= 0 && x < COLS && !used.has(dd * COLS + (alias(dd, x) ? 2 : x));
-    const put = (dd, x, t) => { if (alias(dd, x)) x = 2; used.add(dd * COLS + x); out.push([idx(dd, x), t]); };
-    const fd = 1 + ri(2), fx = ri(COLS);
-    put(fd, fx, '軍旗');
-    const guard = ['大将','中将','少将','大佐'][ri(4)];
-    put(fd + 1, fx, guard);                                        // 軍旗の真後ろに大物を置く
-    let mines = 2;
-    for (const [dd, x] of shuffle([[fd, fx - 1], [fd, fx + 1], [fd - 1, fx]]))
-      if (mines > 0 && ok(dd, x)) { put(dd, x, '地雷'); mines--; }
-    while (mines > 0) { const dd = 1 + ri(3), x = ri(COLS); if (ok(dd, x)) { put(dd, x, '地雷'); mines--; } }
-    const rest = deck();
-    for (const t of ['軍旗', '地雷', '地雷', guard]) rest.splice(rest.indexOf(t), 1);
-    const cells = [];
-    for (let dd = 0; dd < 4; dd++) for (let x = 0; x < COLS; x++) if (!alias(dd, x) && ok(dd, x)) cells.push([dd, x, dd + (Math.random() - .5) * 3]);
-    cells.sort((p, q) => p[2] - q[2]);
-    const pick = cells.slice(0, rest.length).sort((p, q) => p[0] - q[0] || Math.random() - .5);
-    rest.map(t => [t, FRONT[t] + Math.random() * 1.6]).sort((p, q) => q[1] - p[1])
-      .forEach(([t], k) => put(pick[k][0], pick[k][1], t));
-    return out;
-  }
-  // ───────── CPUの配置の強さ（easy=わざと守りの薄い配置 / normal=標準 / hard=堅陣） ─────────
+  // ───────── 配置（自陣は23マス＝司令部1マス＋6列×4段の残り。23枚でちょうど埋まる）／CPUの配置の強さ ─────────
+  // easy=わざと守りの薄い配置 / normal=ランダム / hard=評価を山登りで上げた堅陣（CPU同士の対戦で ランダムに約67%、弱い配置に約76%）
   let cpuLevel = 'normal';
-  const EASY_ITERS = 400;   // 「かんたん」の守りの薄さ（大きいほどわざと弱い配置になる）
   const sideIdx = (side, dd, x) => side === 'P' ? (RIVER_ROW + 1 + dd) * COLS + x : (RIVER_ROW - 1 - dd) * COLS + x;
   const keyOf = (dd, x) => dd * COLS + (dd === 3 && x === 3 ? 2 : x);        // 司令部の右半分は代表マスに寄せる
   const ALL_KEYS = (() => { const a = []; for (let dd = 0; dd < 4; dd++) for (let x = 0; x < COLS; x++) if (!(dd === 3 && x === 3)) a.push(dd * COLS + x); return a; })();
@@ -341,37 +316,41 @@
     const dd = (k / COLS) | 0, x = k % COLS;
     return [[dd - 1, x], [dd + 1, x], [dd, x - 1], [dd, x + 1]].filter(([a, b]) => a >= 0 && a < 4 && b >= 0 && b < COLS).map(([a, b]) => keyOf(a, b));
   }
-  function makeSetupRandom(side) {
+  function makeSetupRandom(side) {          // 23枚を23マスにランダムに並べる
     const types = shuffle(deck());
     return ALL_KEYS.map((k, n) => [sideIdx(side, (k / COLS) | 0, k % COLS), types[n]]);
   }
   // 配置の良し悪し：司令部の入口を地雷や大駒で固める／突入口の手前に強い駒／軍旗の後ろに大駒／スパイは大将のそば／工兵は前列で偵察
+  // 評価の重み。CPU同士の対戦で効果を測り、効いた項目だけを残した（スパイを大将のそばに置く・工兵を前列に置く、は逆効果だったので0）
+  const FW = { hqMine: 7, hqEntryMine: 3, flagMine: 2, flagFront: -6, flagBack: -4, flagGate: -3, flagBehind: 0.7, flagBad: -3,
+               gateStrong: 0.45, gateWeak: -3, entryOfficer: 0.35, spyGen: 0, spyMar: 0, engFront: 0, engBack: 0,
+               mobileFront: 1, fodderFront: 0.6, officerFront: 0, gateBlocked: -8 };
   function setupFitness(M, w) {
     let f = 0;
     for (const [k, t] of M) {
       const dd = (k / COLS) | 0, x = k % COLS, nb = neighborKeys(k), gf = GATE_FRONTS.includes(k), entry = HQ_ENTRIES.includes(k);
       if (t === '地雷') {
-        if (k === HQ_KEY) f += 7 * w.hq; else if (entry) f += 3 * w.hq;
+        if (k === HQ_KEY) f += FW.hqMine * w.hq; else if (entry) f += FW.hqEntryMine * w.hq;
         if (gf) f -= 2;
-        if (nb.some(n => M.get(n) === '軍旗')) f += 2 * w.flag;
+        if (nb.some(n => M.get(n) === '軍旗')) f += FW.flagMine * w.flag;
       } else if (t === '軍旗') {
-        if (dd === 0) f -= 6;
-        if (dd === 3) f -= 4;
-        if (gf) f -= 3;
+        if (dd === 0) f += FW.flagFront;
+        if (dd === 3) f += FW.flagBack;
+        if (gf) f += FW.flagGate;
         const b = M.get(keyOf(dd + 1, x));
-        if (b === undefined || b === '地雷' || b === '軍旗') f -= 3; else f += 0.7 * (POW[b] || 0) * w.flag;
+        if (b === undefined || b === '地雷' || b === '軍旗') f += FW.flagBad; else f += FW.flagBehind * (POW[b] || 0) * w.flag;
       } else {
         const p = POW[t];
-        if (gf) { f += 0.45 * p * w.gate; if (t === '騎兵' || t === '工兵' || t === 'スパイ') f -= 3; }
-        if (entry && isOfficer(t)) f += 0.35 * p * w.hq;
-        if (t === 'スパイ') { if (nb.some(n => M.get(n) === '大将')) f += 5; else if (nb.some(n => M.get(n) === '中将')) f += 2; }
-        if (t === '工兵') f += dd === 0 ? 1.2 : dd === 3 ? -0.5 : 0;
-        if (t === 'タンク' || t === '騎兵' || t === '飛行機') f += dd <= 1 ? 1 : 0;
-        if (t === '少尉' || t === '中尉' || t === '騎兵') f += dd === 0 ? 0.6 : 0;
-        if (isOfficer(t) && dd === 0) f -= 0.8;
+        if (gf) { f += FW.gateStrong * p * w.gate; if (t === '騎兵' || t === '工兵' || t === 'スパイ') f += FW.gateWeak; }
+        if (entry && isOfficer(t)) f += FW.entryOfficer * p * w.hq;
+        if (t === 'スパイ') { if (nb.some(n => M.get(n) === '大将')) f += FW.spyGen; else if (nb.some(n => M.get(n) === '中将')) f += FW.spyMar; }
+        if (t === '工兵') f += dd === 0 ? FW.engFront : dd === 3 ? FW.engBack : 0;
+        if (t === 'タンク' || t === '騎兵' || t === '飛行機') f += dd <= 1 ? FW.mobileFront : 0;
+        if (t === '少尉' || t === '中尉' || t === '騎兵') f += dd === 0 ? FW.fodderFront : 0;
+        if (isOfficer(t) && dd === 0) f += FW.officerFront;
       }
     }
-    if (GATE_FRONTS.every(g => FIXED.includes(M.get(g)))) f -= 8;        // 両方の突入口の手前が動けない駒だと、自軍が河を渡れない
+    if (GATE_FRONTS.every(g => FIXED.includes(M.get(g)))) f += FW.gateBlocked;        // 両方の突入口の手前が動けない駒だと、自軍が河を渡れない
     return f;
   }
   // 配置の評価値を山登りで上げる（dir=1: 堅陣）／下げる（dir=-1: わざと守りの薄い配置）
@@ -393,14 +372,28 @@
     }
     return [...M].map(([k, t]) => [sideIdx(side, (k / COLS) | 0, k % COLS), t]);
   }
-  const makeSetupStrong = side => makeSetupClimb(side, 1, makeSetup(side), 1500);
-  const makeSetupWeak = side => makeSetupClimb(side, -1, makeSetupRandom(side), EASY_ITERS);
-  const makeSetupBy = (level, side) => level === 'easy' ? makeSetupWeak(side) : level === 'hard' ? makeSetupStrong(side) : makeSetup(side);
+  const makeSetupStrong = side => makeSetupClimb(side, 1, makeSetupRandom(side), 1500);
+  // 「かんたん」: わざと守りが薄い。司令部と入口を弱い駒で、軍旗は最前列でむき出し、地雷は奥の隅、将官・佐官は両端に置く
+  function makeSetupWeak(side) {
+    const M = new Map(), rest = deck();
+    const place = (k, t) => { M.set(k, t); rest.splice(rest.indexOf(t), 1); };
+    const weak = shuffle(['工兵', '工兵', 'スパイ', '騎兵', '少尉', '少尉', '中尉', '中尉']);
+    [HQ_KEY, ...HQ_ENTRIES].forEach((k, n) => place(k, weak[n]));
+    place(keyOf(3, 0), '地雷'); place(keyOf(3, 5), '地雷');
+    const fx = [2, 3][ri(2)];
+    place(keyOf(0, fx), '軍旗'); place(keyOf(1, fx), weak[5]);
+    const outer = shuffle([keyOf(0, 0), keyOf(1, 0), keyOf(2, 0), keyOf(0, 5), keyOf(1, 5), keyOf(2, 5)]);
+    shuffle(OFFICERS.slice()).forEach((t, n) => place(outer[n], t));
+    const left = shuffle(rest.slice()), free = ALL_KEYS.filter(k => !M.has(k));
+    free.forEach((k, n) => M.set(k, left[n]));
+    return [...M].map(([k, t]) => [sideIdx(side, (k / COLS) | 0, k % COLS), t]);
+  }
+  const makeSetupBy = (level, side) => level === 'easy' ? makeSetupWeak(side) : level === 'hard' ? makeSetupStrong(side) : makeSetupRandom(side);
 
   function applySetup(side, list) {
     const lo = side === 'P' ? P_LO : 0, hi = side === 'P' ? P_HI : RIVER_ROW * COLS;
     for (let i = lo; i < hi; i++) board[i] = null;
-    for (const [cell, t] of (list || (side === 'C' ? makeSetupBy(cpuLevel, 'C') : makeSetup('P')))) board[cell] = newPiece(t, side);
+    for (const [cell, t] of (list || (side === 'C' ? makeSetupBy(cpuLevel, 'C') : makeSetupRandom('P')))) board[cell] = newPiece(t, side);
   }
 
   function newGame() {
@@ -474,16 +467,31 @@
   }
 
   // ───────── CPU（人間の駒は「候補」しか知らない） ─────────
-  function cpuMove(side = 'C') {
+  // CPUの思考オプション。守備隊: 指定した駒のうち強い順に guardians 枚は、司令部から radius マス以内にとどまる
+  // （人間の「ヒコーキ・タンクで掃除してから将官で攻める」動きを再現した対戦で、攻め側の勝ちが約41%→34%に下がった。「つよい」配置では配置自体が守りになるので不要）
+  const AI_BY_LEVEL = { easy: { guardians: 0 }, normal: { guardians: 1, guardTypes: ['少将'], radius: 3 }, hard: { guardians: 0 } };
+  const officerShare = q => { let tot = 0, off = 0; for (const t of candOf(q)) { tot += COUNT[t]; if (isOfficer(t)) off += COUNT[t]; } return tot ? off / tot : 0; }; // 司令部を占領できる駒である見込み
+
+  function cpuMove(side = 'C', opt = AI_BY_LEVEL[cpuLevel]) {
     const opp = side === 'C' ? 'P' : 'C', fwdRow = side === 'C' ? 1 : -1;
     if (phase !== 'play' || turn !== side) return;
-    let best = null, bs = -1e9;
+    let best = null, bs = -1e9, threat = 0;
+    // 守備隊：少将以上の強い駒のうち強い順に opt.guardians 枚は、司令部の近く(radius以内)から離れない（近くの敵を取るときだけ出る）
+    const guardians = new Set();
+    if (opt.guardians) board.map((q, qi) => q && q.own === side && opt.guardTypes.includes(q.t) ? [q, qi] : null).filter(Boolean)
+      .sort((x, y) => POW[y[0].t] - POW[x[0].t]).slice(0, opt.guardians).forEach(([q]) => guardians.add(q));
+    board.forEach((q, qi) => {                                                       // 自軍司令部に迫る敵の見込み（0〜1）
+      if (!q || q.own !== opp) return;
+      const dn = DIST_TO[side][qi];
+      if (dn <= 3) threat = Math.max(threat, officerShare(q) * (4 - dn) / 3);
+    });
     for (let i = 0; i < board.length; i++) {
       const a = board[i];
       if (!a || a.own !== side) continue;
       const off = isOfficer(a.t);
       for (const j of dests(i)) {
         const d = board[j];
+        if (guardians.has(a) && DIST_TO[side][j] > opt.radius && !(d && DIST_TO[side][j] <= opt.radius + 1)) continue;
         let s = Math.random() * 0.6;
         if (d) {
           let tot = 0, ev = 0, win = 0;
@@ -498,7 +506,8 @@
           if (tot) s += ev / tot;
           if (HQ[opp].includes(j) && off) s += 3000 * (tot ? win / tot : 1);
           if (candOf(d).size > 6) s += 0.8;                 // 正体不明の駒への探り
-          if (DIST_TO[side][j] <= 3) s += 7;             // 自軍司令部に迫る敵を排除
+          const dn = DIST_TO[side][j];
+          if (dn <= 3) s += 14 * officerShare(d) * (tot ? win / tot : 0) * (4 - dn) / 3 * (1 + threat); // 司令部に迫る敵は、司令部を占領できそうなほど・勝てそうなほど優先して排除（勝算がなければ攻撃しない）
         } else {
           if (HQ[opp].includes(j)) s += 3000;            // 空の敵司令部(大将〜少佐のみ入れる)
           s += off ? (DIST_TO[opp][i] - DIST_TO[opp][j]) * 0.8 : (rowOf(j) - rowOf(i)) * fwdRow * 0.35;
